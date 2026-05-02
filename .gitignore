@@ -1,0 +1,53 @@
+# ==========================================
+# CAD Retrieval Project - .gitignore
+# ==========================================
+
+# 1. Raw Data & Labels (Prevent heavy file uploads)
+*.step
+*.stp
+*.face_truth
+
+# 2. Processed Graph Data (PyG and Pickle files)
+*.pt
+*.graph
+
+# Ignore the contents of data directories but keep the folder structure
+data/raw_step/*
+!data/raw_step/.gitkeep
+data/processed_graphs/*
+!data/processed_graphs/.gitkeep
+
+# 3. Model Weights & Vector Databases
+checkpoints/*
+!checkpoints/.gitkeep
+*.pth       # PyTorch model weights
+*.bin       # FAISS index files
+
+# 4. Python Virtual Environments
+venv/
+env/
+.venv/
+.conda/
+miniconda3/
+
+# 5. Python Cache & Build Files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+
+# 6. Logging & Outputs
+*.log
+runs/       # TensorBoard logs (if used later)
+wandb/      # Weights & Biases logs (if used later)
+
+# 7. Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# 8. OS & IDE Specific Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
