@@ -1,0 +1,30 @@
+# ==========================================
+# CAD Retrieval Project - requirements.txt
+# ==========================================
+
+# ------------------------------------------
+# [CRITICAL WARNING]
+# Do NOT install pythonocc-core via pip. 
+# It requires underlying C++ OpenCASCADE libraries.
+# You MUST install it via Conda BEFORE running pip install:
+# 
+# conda install -c conda-forge pythonocc-core
+# ------------------------------------------
+
+# --- Deep Learning & Graph Neural Networks ---
+# Note: For PyTorch, it's highly recommended to install the correct CUDA version 
+# via the official PyTorch website command rather than this text file if you have a GPU.
+torch>=2.0.0
+torch_geometric>=2.3.0
+
+# --- Vector Database (Retrieval) ---
+# Use faiss-gpu instead if you are running on a Linux machine with Nvidia GPUs
+faiss-cpu>=1.7.4
+
+# --- Interactive Web Interface ---
+streamlit>=1.25.0
+
+# --- Utilities & Data Processing ---
+numpy>=1.24.0
+scipy>=1.10.0
+tqdm>=4.65.0
