@@ -63,7 +63,7 @@ class CADGraphDataset(Dataset):
         
         try:
             # Load the PyG Data object from disk
-            data = torch.load(filepath)
+            data = torch.load(filepath, weights_only=False)
             
             # -------------------------------------------------------------
             # CRITICAL FOR RETRIEVAL: Attach the filename (without extension) 
@@ -114,7 +114,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dir", type=str, default="../data/processed_graphs", help="Path to .pt files")
+    parser.add_argument("--dir", type=str, default="./data/processed_graphs/mfcad", help="Path to .pt files")
     args = parser.parse_args()
     
     try:
