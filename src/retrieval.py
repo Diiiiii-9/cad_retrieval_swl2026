@@ -167,9 +167,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CAD Model Vector Retrieval")
     parser.add_argument("--data_dir", type=str, default="./data/processed_graphs/mfcad", help="Path to .pt files")
     parser.add_argument("--save_dir", type=str, default="./checkpoints", help="Directory containing weights & db")
-    parser.add_argument("--hidden_dim", type=int, default=128, help="GNN hidden dimension")
-    parser.add_argument("--out_dim", type=int, default=64, help="Final CAD embedding dimension")
-    parser.add_argument("--batch_size", type=int, default=64, help="Inference batch size")
+    parser.add_argument("--hidden_dim", type=int, default=256, help="GNN hidden dimension")
+    parser.add_argument("--out_dim", type=int, default=128, help="Final CAD embedding dimension")
+    parser.add_argument("--batch_size", type=int, default=32, help="Inference batch size")
     
     # Mode selection
     parser.add_argument("--build", action="store_true", help="Build the FAISS database from the dataset")

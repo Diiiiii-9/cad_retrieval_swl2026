@@ -270,9 +270,9 @@ def main():
             # print(f"Failed {name}: {msg}")
 
     print("\n" + "="*40)
-    print("🎉 Conversion Complete!")
-    print(f"✅ Successfully Processed/Skipped: {success_count}")
-    print(f"❌ Failed: {fail_count}")
+    print("Conversion Complete!")
+    print(f"[PASS] Successfully Processed/Skipped: {success_count}")
+    print(f"[FAIL] Failed: {fail_count}")
     print("="*40)
 
 if __name__ == "__main__":

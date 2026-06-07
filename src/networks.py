@@ -20,7 +20,7 @@ class CADGraphEncoder(nn.Module):
     The core Graph Neural Network. 
     Compresses a variable-sized CAD graph into a fixed-size vector (embedding).
     """
-    def __init__(self, node_in_dim, edge_in_dim, hidden_dim=128, out_dim=128, num_layers=3, dropout=0.2):
+    def __init__(self, node_in_dim, edge_in_dim, hidden_dim=256, out_dim=128, num_layers=3, dropout=0.2):
         """
         Args:
             node_in_dim (int): Number of input features per node (e.g., 4).

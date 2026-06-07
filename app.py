@@ -55,7 +55,7 @@ st.set_page_config(
 # Caching Heavy Components
 # ==========================================
 @st.cache_resource
-def load_backend_system(node_dim=4, edge_dim=3, hidden_dim=128, out_dim=64):
+def load_backend_system(node_dim=4, edge_dim=3, hidden_dim=256, out_dim=128):
     """
     Loads the trained PyTorch model, FAISS index, and metadata into memory.
     @st.cache_resource prevents reloading these heavy files on every UI interaction.

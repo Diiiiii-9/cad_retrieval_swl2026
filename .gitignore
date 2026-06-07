@@ -18,10 +18,10 @@ data/processed_graphs/*
 !data/processed_graphs/.gitkeep
 
 # 3. Model Weights & Vector Databases
-checkpoints/*
-!checkpoints/.gitkeep
-*.pth       # PyTorch model weights
-*.bin       # FAISS index files
+# checkpoints/*
+# !checkpoints/.gitkeep
+# *.pth       # PyTorch model weights
+# *.bin       # FAISS index files
 
 # 4. Python Virtual Environments
 venv/
