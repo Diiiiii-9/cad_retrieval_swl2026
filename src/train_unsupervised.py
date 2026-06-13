@@ -22,7 +22,9 @@ import torch.nn.functional as F
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch_geometric.loader import DataLoader
+from torch_geometric.utils import dropout_edge
 
+# Import custom modules
 from src.dataset import CADGraphDataset
 from src.networks import CADGraphEncoder, CADContrastiveModel
 
@@ -31,29 +33,34 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 # ==========================================
 # Data Augmentation Strategy
 # ==========================================
-def augment_graph_batch(batch, feature_mask_rate=0.15, feature_noise_std=0.02):
+def augment_graph_batch(batch, edge_drop_rate=0.15, feature_noise_std=0.02):
     """
-    Creates an augmented view of a PyG Batch for CAD contrastive learning.
+    Creates an augmented view of a PyG Batch for contrastive learning.
     
-    1. Feature Masking: Randomly masks (sets to zero) a percentage of node features.
-       This forces the network to infer the missing face's properties from its topological neighbors.
-    2. Feature Noise: Adds slight Gaussian noise to simulate minor geometric variations.
-    NOTE: We explicitly AVOID edge dropout because B-Rep topology is highly sensitive.
+    1. Edge Dropout: Randomly removes a percentage of edges to force the 
+       network to not rely entirely on exact topology.
+    2. Feature Noise: Adds slight Gaussian noise to node features to 
+       simulate minor geometric scaling or translation differences.
     """
+    # Clone batch to avoid modifying the original data reference
     aug_batch = batch.clone()
     
+    # 1. Edge Dropout (Ensure force_undirected to keep the graph valid)
+    if aug_batch.edge_index is not None and aug_batch.edge_index.numel() > 0:
+        edge_index, edge_mask = dropout_edge(
+            aug_batch.edge_index, 
+            p=edge_drop_rate, 
+            force_undirected=True,
+            training=True
+        )
+        aug_batch.edge_index = edge_index
+        if aug_batch.edge_attr is not None:
+            aug_batch.edge_attr = aug_batch.edge_attr[edge_mask]
+            
+    # 2. Node Feature Noise
     if aug_batch.x is not None:
-        # 1. Feature Masking
-        # Create a boolean mask: True for features we keep, False for features we mask
-        device = aug_batch.x.device
-        mask = torch.rand(aug_batch.x.size(0), device=device) > feature_mask_rate
-        
-        # Apply mask (broadcasting to all feature dimensions of the masked nodes)
-        aug_batch.x = aug_batch.x * mask.unsqueeze(1).float()
-        
-        # 2. Node Feature Noise (only add noise to unmasked nodes)
         noise = torch.randn_like(aug_batch.x) * feature_noise_std
-        aug_batch.x = aug_batch.x + (noise * mask.unsqueeze(1).float())
+        aug_batch.x = aug_batch.x + noise
         
     return aug_batch
 
@@ -95,9 +102,8 @@ def train():
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
-    parser.add_argument("--hidden_dim", type=int, default=256, help="GNN hidden dimension")
-    parser.add_argument("--out_dim", type=int, default=128, help="Final CAD embedding dimension")
-    
+    parser.add_argument("--hidden_dim", type=int, default=128, help="GNN hidden dimension")
+    parser.add_argument("--out_dim", type=int, default=64, help="Final CAD embedding dimension")
     parser.add_argument("--temp", type=float, default=0.1, help="Temperature for InfoNCE loss")
     args = parser.parse_args()
 
@@ -158,8 +164,8 @@ def train():
             batch = batch.to(device)
             
             # Step A: Generate two augmented views of the batch
-            view1 = augment_graph_batch(batch, feature_mask_rate=0.1, feature_noise_std=0.01)
-            view2 = augment_graph_batch(batch, feature_mask_rate=0.2, feature_noise_std=0.03)
+            view1 = augment_graph_batch(batch, edge_drop_rate=0.1, feature_noise_std=0.01)
+            view2 = augment_graph_batch(batch, edge_drop_rate=0.2, feature_noise_std=0.03)
             
             # Step B: Forward Pass
             optimizer.zero_grad()
