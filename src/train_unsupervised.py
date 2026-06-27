@@ -33,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 # ==========================================
 # Data Augmentation Strategy
 # ==========================================
-def augment_graph_batch(batch, edge_drop_rate=0.15, feature_noise_std=0.02):
+def augment_graph_batch(batch, edge_drop_rate=0.15, feature_noise_std=0.02, aug_mode="both"):
     """
     Creates an augmented view of a PyG Batch for contrastive learning.
     
@@ -41,26 +41,37 @@ def augment_graph_batch(batch, edge_drop_rate=0.15, feature_noise_std=0.02):
        network to not rely entirely on exact topology.
     2. Feature Noise: Adds slight Gaussian noise to node features to 
        simulate minor geometric scaling or translation differences.
+
+    Args:
+        aug_mode (str): Which augmentation(s) to apply. One of:
+            "both"          -- edge dropout AND feature noise (original behavior)
+            "edge_drop"     -- edge dropout only
+            "feature_noise" -- feature noise only
     """
+    if aug_mode not in ("both", "edge_drop", "feature_noise"):
+        raise ValueError(f"Unknown aug_mode: {aug_mode!r}. Must be 'both', 'edge_drop', or 'feature_noise'.")
+
     # Clone batch to avoid modifying the original data reference
     aug_batch = batch.clone()
     
     # 1. Edge Dropout (Ensure force_undirected to keep the graph valid)
-    if aug_batch.edge_index is not None and aug_batch.edge_index.numel() > 0:
-        edge_index, edge_mask = dropout_edge(
-            aug_batch.edge_index, 
-            p=edge_drop_rate, 
-            force_undirected=True,
-            training=True
-        )
-        aug_batch.edge_index = edge_index
-        if aug_batch.edge_attr is not None:
-            aug_batch.edge_attr = aug_batch.edge_attr[edge_mask]
+    if aug_mode in ("both", "edge_drop"):
+        if aug_batch.edge_index is not None and aug_batch.edge_index.numel() > 0:
+            edge_index, edge_mask = dropout_edge(
+                aug_batch.edge_index, 
+                p=edge_drop_rate, 
+                force_undirected=True,
+                training=True
+            )
+            aug_batch.edge_index = edge_index
+            if aug_batch.edge_attr is not None:
+                aug_batch.edge_attr = aug_batch.edge_attr[edge_mask]
             
     # 2. Node Feature Noise
-    if aug_batch.x is not None:
-        noise = torch.randn_like(aug_batch.x) * feature_noise_std
-        aug_batch.x = aug_batch.x + noise
+    if aug_mode in ("both", "feature_noise"):
+        if aug_batch.x is not None:
+            noise = torch.randn_like(aug_batch.x) * feature_noise_std
+            aug_batch.x = aug_batch.x + noise
         
     return aug_batch
 
@@ -105,6 +116,9 @@ def train():
     parser.add_argument("--hidden_dim", type=int, default=128, help="GNN hidden dimension")
     parser.add_argument("--out_dim", type=int, default=64, help="Final CAD embedding dimension")
     parser.add_argument("--temp", type=float, default=0.1, help="Temperature for InfoNCE loss")
+    parser.add_argument("--pooling", type=str, default="mean", choices=["mean", "max", "max_mean"], help="Graph readout strategy: mean, max, or max_mean (concatenated)")
+    parser.add_argument("--aug_mode", type=str, default="both", choices=["both", "edge_drop", "feature_noise"], help="Which contrastive augmentation(s) to apply")
+    parser.add_argument("--num_layers", type=int, default=3, help="Number of GINE message-passing layers")
     args = parser.parse_args()
 
     # 1. Hardware setup
@@ -139,7 +153,8 @@ def train():
         edge_in_dim=edge_dim, 
         hidden_dim=args.hidden_dim, 
         out_dim=args.out_dim,
-        num_layers=3
+        num_layers=args.num_layers,
+        pooling=args.pooling
     )
     
     # Wrap encoder in Contrastive Model (adds the projection head)
@@ -164,8 +179,8 @@ def train():
             batch = batch.to(device)
             
             # Step A: Generate two augmented views of the batch
-            view1 = augment_graph_batch(batch, edge_drop_rate=0.1, feature_noise_std=0.01)
-            view2 = augment_graph_batch(batch, edge_drop_rate=0.2, feature_noise_std=0.03)
+            view1 = augment_graph_batch(batch, edge_drop_rate=0.1, feature_noise_std=0.01, aug_mode=args.aug_mode)
+            view2 = augment_graph_batch(batch, edge_drop_rate=0.2, feature_noise_std=0.03, aug_mode=args.aug_mode)
             
             # Step B: Forward Pass
             optimizer.zero_grad()

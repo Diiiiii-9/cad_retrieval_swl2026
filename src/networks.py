@@ -12,7 +12,7 @@ leverage the B-Rep topology, mapping both Face (node) and Edge features.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GINEConv, global_mean_pool, global_add_pool, MLP
+from torch_geometric.nn import GINEConv, global_mean_pool, global_max_pool, global_add_pool, MLP
 from torch.nn import Sequential, Linear, BatchNorm1d, ReLU
 
 class CADGraphEncoder(nn.Module):
@@ -20,7 +20,7 @@ class CADGraphEncoder(nn.Module):
     The core Graph Neural Network. 
     Compresses a variable-sized CAD graph into a fixed-size vector (embedding).
     """
-    def __init__(self, node_in_dim, edge_in_dim, hidden_dim=128, out_dim=128, num_layers=3, dropout=0.2):
+    def __init__(self, node_in_dim, edge_in_dim, hidden_dim=128, out_dim=128, num_layers=3, dropout=0.2, pooling="mean"):
         """
         Args:
             node_in_dim (int): Number of input features per node (e.g., 4).
@@ -29,9 +29,16 @@ class CADGraphEncoder(nn.Module):
             out_dim (int): Final output dimensionality of the graph embedding.
             num_layers (int): Number of GINE message passing layers.
             dropout (float): Dropout probability for regularization.
+            pooling (str): How to aggregate node embeddings into a single graph
+                embedding. One of "mean", "max", or "max_mean" (concatenates
+                both). Default "mean" preserves the original behavior.
         """
         super().__init__()
         self.dropout = dropout
+
+        if pooling not in ("mean", "max", "max_mean"):
+            raise ValueError(f"Unknown pooling mode: {pooling!r}. Must be 'mean', 'max', or 'max_mean'.")
+        self.pooling = pooling
         
         # 1. Initial Feature Embedders
         # Maps raw features (areas, types, lengths) into a high-dimensional continuous space
@@ -49,7 +56,10 @@ class CADGraphEncoder(nn.Module):
             self.convs.append(GINEConv(nn_update, edge_dim=hidden_dim))
             
         # 3. Final Projection
-        self.post_mp = Linear(hidden_dim, out_dim)
+        # NOTE: "max_mean" concatenates two hidden_dim-sized vectors together,
+        # so the input to post_mp is twice as wide in that case.
+        post_mp_in_dim = hidden_dim * 2 if pooling == "max_mean" else hidden_dim
+        self.post_mp = Linear(post_mp_in_dim, out_dim)
 
     def forward(self, x, edge_index, edge_attr, batch):
         """
@@ -72,8 +82,19 @@ class CADGraphEncoder(nn.Module):
             
         # Global Pooling (Readout)
         # Aggregates all node vectors in a graph into a single vector representing the entire CAD part.
-        # global_mean_pool computes the average node representation.
-        graph_embedding = global_mean_pool(x, batch)
+        if self.pooling == "mean":
+            # Averages every face's vector together -- captures the "overall" shape character.
+            graph_embedding = global_mean_pool(x, batch)
+        elif self.pooling == "max":
+            # Takes the single most extreme value per dimension across all faces --
+            # highlights the most distinctive feature rather than the overall average.
+            graph_embedding = global_max_pool(x, batch)
+        elif self.pooling == "max_mean":
+            # Concatenates both signals so the model has access to overall shape AND
+            # the most distinctive feature simultaneously.
+            graph_embedding = torch.cat(
+                [global_max_pool(x, batch), global_mean_pool(x, batch)], dim=1
+            )
         
         # Final linear projection
         out = self.post_mp(graph_embedding)

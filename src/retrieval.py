@@ -55,7 +55,8 @@ def build_database(args):
         edge_in_dim=edge_dim, 
         hidden_dim=args.hidden_dim, 
         out_dim=args.out_dim,
-        num_layers=3
+        num_layers=args.num_layers,
+        pooling=args.pooling
     ).to(device)
 
     weights_path = pathlib.Path(args.save_dir) / "final_encoder_weights.pth"
@@ -169,6 +170,8 @@ if __name__ == "__main__":
     parser.add_argument("--save_dir", type=str, default="./checkpoints", help="Directory containing weights & db")
     parser.add_argument("--hidden_dim", type=int, default=128, help="GNN hidden dimension")
     parser.add_argument("--out_dim", type=int, default=64, help="Final CAD embedding dimension")
+    parser.add_argument("--pooling", type=str, default="mean", choices=["mean", "max", "max_mean"], help="Graph readout strategy used when this checkpoint was trained")
+    parser.add_argument("--num_layers", type=int, default=3, help="Number of GINE layers used when this checkpoint was trained")
     parser.add_argument("--batch_size", type=int, default=64, help="Inference batch size")
     
     # Mode selection
