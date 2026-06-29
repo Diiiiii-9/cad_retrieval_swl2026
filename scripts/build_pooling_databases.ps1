@@ -9,8 +9,13 @@
 # retrieval.py will instantiate the wrong-shaped network and either crash
 # or silently load garbage weights.
 #
-# Usage: from the repo root:
-#   powershell -ExecutionPolicy Bypass -File build_pooling_databases.ps1
+# Usage (works from any directory; the script switches to the repo root itself):
+#   powershell -ExecutionPolicy Bypass -File scripts\build_pooling_databases.ps1
+
+# Anchor to the repo root regardless of where this script is launched from
+# (this file lives in scripts/, one level below the repo root).
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $RepoRoot
 
 $configs = @(
     @{ name = "pooling_max";      out_dim = 64; pooling = "max" },

@@ -6,10 +6,11 @@ manufacturing-aware Recall@K / MRR logic validated in
 notebooks/ablation_study_mfcad.ipynb, looped across configs.
 
 Each config's faiss_index.bin + metadata.pkl (built by
-build_sweep_databases.ps1) lives under checkpoints/sweep/<name>/.
+scripts/build_sweep_databases.ps1) lives under checkpoints/sweep/<name>/.
 
-Usage (from repo root):
-    python evaluate_sweep.py
+Usage (works from any directory; paths are resolved relative to the repo
+root via this file's own location):
+    python scripts/evaluate_sweep.py
 """
 
 import pickle
@@ -21,7 +22,10 @@ from tqdm import tqdm
 # ==========================================
 # Config
 # ==========================================
-PROJECT_ROOT = Path(".")
+# This script lives in scripts/, one level below the repo root, so anchor
+# PROJECT_ROOT off this file's own location rather than the current working
+# directory -- that way it works correctly regardless of where it's launched from.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 LABEL_DIR = PROJECT_ROOT / "data" / "raw_step" / "mfcad_label"
 SWEEP_DIR = PROJECT_ROOT / "checkpoints" / "sweep"
 

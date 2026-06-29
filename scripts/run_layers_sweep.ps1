@@ -1,21 +1,25 @@
 # ==========================================
-# Pooling Strategy Ablation Sweep
+# Layer Count Ablation Sweep
 # ==========================================
-# Trains 2 new configs (max, max_mean). The "mean" pooling result is NOT
-# retrained here -- it's already covered by checkpoints\sweep\baseline_dim64_temp01
-# from the dim/temp sweep (out_dim=64, temp=0.1, pooling defaulted to mean,
-# 30 epochs). Reusing it keeps the comparison valid since every other setting
-# (epochs, out_dim, temp, batch size, augmentation) is identical -- pooling
-# is the only thing that differs across all 3 configs in this ablation.
+# Trains 2 new configs (num_layers=2, num_layers=5). The 3-layer config is
+# NOT retrained here -- it's already covered by checkpoints\sweep\baseline_dim64_temp01
+# (out_dim=64, temp=0.1, num_layers defaulted to 3, 30 epochs). Reusing it
+# keeps the comparison valid since every other setting is identical --
+# num_layers is the only thing that differs across all 3 configs here.
 #
-# Usage: from the repo root:
-#   powershell -ExecutionPolicy Bypass -File run_pooling_sweep.ps1
+# Usage (works from any directory; the script switches to the repo root itself):
+#   powershell -ExecutionPolicy Bypass -File scripts\run_layers_sweep.ps1
 
-$EPOCHS = 30   # MUST match the dim/temp sweep's epoch count for valid comparison
+$EPOCHS = 30   # MUST match the other sweeps' epoch count for valid comparison
+
+# Anchor to the repo root regardless of where this script is launched from
+# (this file lives in scripts/, one level below the repo root).
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $RepoRoot
 
 $configs = @(
-    @{ name = "pooling_max";      args = "--out_dim 64 --temp 0.1 --pooling max" },
-    @{ name = "pooling_max_mean"; args = "--out_dim 64 --temp 0.1 --pooling max_mean" }
+    @{ name = "layers2"; args = "--out_dim 64 --temp 0.1 --num_layers 2" },
+    @{ name = "layers5"; args = "--out_dim 64 --temp 0.1 --num_layers 5" }
 )
 
 New-Item -ItemType Directory -Force -Path "logs" | Out-Null
@@ -25,8 +29,8 @@ $totalStart = Get-Date
 $totalStartStr = $totalStart.ToString("yyyy-MM-dd HH:mm:ss")
 
 Write-Host "=============================================="
-Write-Host ("Starting pooling sweep: " + $configs.Count + " new configs at " + $EPOCHS + " epochs each")
-Write-Host ("(mean pooling reused from checkpoints\sweep\baseline_dim64_temp01)")
+Write-Host ("Starting layer-count sweep: " + $configs.Count + " new configs at " + $EPOCHS + " epochs each")
+Write-Host ("(num_layers=3 reused from checkpoints\sweep\baseline_dim64_temp01)")
 Write-Host ("Start time: " + $totalStartStr)
 Write-Host "=============================================="
 
@@ -72,6 +76,6 @@ $totalEndStr = $totalEnd.ToString("yyyy-MM-dd HH:mm:ss")
 
 Write-Host ""
 Write-Host "=============================================="
-Write-Host ("Pooling sweep finished (or stopped) at " + $totalEndStr)
+Write-Host ("Layer-count sweep finished (or stopped) at " + $totalEndStr)
 Write-Host ("Total elapsed: " + $totalElapsedStr)
 Write-Host "=============================================="

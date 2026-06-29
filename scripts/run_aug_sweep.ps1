@@ -7,10 +7,15 @@
 # keeps the comparison valid since every other setting is identical -- aug_mode
 # is the only thing that differs across all 3 configs in this ablation.
 #
-# Usage: from the repo root:
-#   powershell -ExecutionPolicy Bypass -File run_aug_sweep.ps1
+# Usage (works from any directory; the script switches to the repo root itself):
+#   powershell -ExecutionPolicy Bypass -File scripts\run_aug_sweep.ps1
 
 $EPOCHS = 30   # MUST match the other sweeps' epoch count for valid comparison
+
+# Anchor to the repo root regardless of where this script is launched from
+# (this file lives in scripts/, one level below the repo root).
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $RepoRoot
 
 $configs = @(
     @{ name = "aug_edge_drop";     args = "--out_dim 64 --temp 0.1 --aug_mode edge_drop" },

@@ -8,8 +8,13 @@
 # retrieval.py will instantiate the wrong-shaped network (wrong number of
 # GINE layers) and fail to load the weights correctly.
 #
-# Usage: from the repo root:
-#   powershell -ExecutionPolicy Bypass -File build_layers_databases.ps1
+# Usage (works from any directory; the script switches to the repo root itself):
+#   powershell -ExecutionPolicy Bypass -File scripts\build_layers_databases.ps1
+
+# Anchor to the repo root regardless of where this script is launched from
+# (this file lives in scripts/, one level below the repo root).
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $RepoRoot
 
 $configs = @(
     @{ name = "layers2"; out_dim = 64; num_layers = 2 },

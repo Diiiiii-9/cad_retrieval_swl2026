@@ -6,8 +6,8 @@
 # varied per-config). Each run logs to its own file under logs/ so you can
 # check progress or diagnose a crash without losing prior results.
 #
-# Usage: from the repo root, run:
-#   powershell -ExecutionPolicy Bypass -File run_sweep.ps1
+# Usage (works from any directory; the script switches to the repo root itself), run:
+#   powershell -ExecutionPolicy Bypass -File scripts\run_sweep_fixed.ps1
 #
 # If it's interrupted, just re-run it -- already-completed configs are
 # skipped automatically (checked via existence of final_encoder_weights.pth).
@@ -15,6 +15,11 @@
 $EPOCHS = 30   # FIXED for the entire sweep -- do not change between configs
 
 # Each entry: (name, extra_args)
+# Anchor to the repo root regardless of where this script is launched from
+# (this file lives in scripts/, one level below the repo root).
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $RepoRoot
+
 $configs = @(
     @{ name = "baseline_dim64_temp01"; args = "--out_dim 64  --temp 0.1" },
     @{ name = "dim32";                 args = "--out_dim 32  --temp 0.1" },
