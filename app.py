@@ -32,7 +32,40 @@ ROOT_DIR = pathlib.Path(__file__).parent.absolute()
 SRC_DIR = ROOT_DIR / "src"
 sys.path.append(str(SRC_DIR))
 
-ORIGINAL_STEP_DIR = ROOT_DIR / "data" / "raw_step" / "mfcad"
+STEP_EXTENSIONS = (".step", ".stp")
+
+# Each dataset is fully self-contained: its own database, weights and raw STEP files
+DATASETS = {
+    "mfcad": {
+        "title": "MFCAD",
+        "db_dir": ROOT_DIR / "checkpoints",
+        "weights_dir": ROOT_DIR / "checkpoints",
+        "index_file": "faiss_index.bin",
+        "meta_file": "metadata.pkl",
+        "step_dir": ROOT_DIR / "data" / "raw_step" / "mfcad",
+        "build_hint": "python -m src.retrieval --build",
+        "train_hint": "python -m src.train_unsupervised",
+    },
+    "fusion360": {
+        "title": "Fusion 360",
+        "db_dir": ROOT_DIR / "checkpoints" / "fusion360",
+        "weights_dir": ROOT_DIR / "checkpoints" / "fusion360",
+        "index_file": "faiss_index_fusion360.bin",
+        "meta_file": "metadata_fusion360.pkl",
+        "step_dir": ROOT_DIR / "data" / "raw_step" / "fusion360",
+        "build_hint": "python -m src.fusion360.retrieval_fusion360 --build --weights_dir ./checkpoints/fusion360",
+        "train_hint": "python -m src.fusion360.train_unsupervised_fusion360",
+    },
+}
+
+
+def find_step_file(model_name, step_dir):
+    """Looks up a model by name in the dataset's own raw STEP folder and returns its path (or None)."""
+    for ext in STEP_EXTENSIONS:
+        candidate = step_dir / f"{model_name}{ext}"
+        if candidate.exists():
+            return candidate
+    return None
 
 # Import custom backend modules
 from src.data_converter import build_pyg_graph
@@ -55,20 +88,21 @@ st.set_page_config(
 # Caching Heavy Components
 # ==========================================
 @st.cache_resource
-def load_backend_system(node_dim=4, edge_dim=3, hidden_dim=128, out_dim=64):
+def load_backend_system(dataset_key, node_dim=4, edge_dim=3, hidden_dim=128, out_dim=64):
     """
     Loads the trained PyTorch model, FAISS index, and metadata into memory.
     @st.cache_resource prevents reloading these heavy files on every UI interaction.
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    weights_path = ROOT_DIR / "checkpoints"
+    cfg = DATASETS[dataset_key]
+    weights_path = cfg["weights_dir"]
     
     # 1. Load FAISS Index & Metadata
-    index_file = weights_path / "faiss_index.bin"
-    meta_file = weights_path / "metadata.pkl"
+    index_file = cfg["db_dir"] / cfg["index_file"]
+    meta_file = cfg["db_dir"] / cfg["meta_file"]
     
     if not index_file.exists() or not meta_file.exists():
-        return None, None, None, f"Database missing! Please run 'python src/retrieval.py --build' first."
+        return None, None, None, f"{cfg['title']} database missing! Please run `{cfg['build_hint']}` first."
         
     index = faiss.read_index(str(index_file))
     with open(meta_file, "rb") as f:
@@ -79,7 +113,7 @@ def load_backend_system(node_dim=4, edge_dim=3, hidden_dim=128, out_dim=64):
     if not model_file.exists():
         model_file = weights_path / "best_contrastive_model.pth"
         if not model_file.exists():
-            return None, None, None, "Model weights missing! Please run training first."
+            return None, None, None, f"{cfg['title']} model weights missing in `{weights_path}`! Please run `{cfg['train_hint']}` first."
             
     encoder = CADGraphEncoder(
         node_in_dim=node_dim, 
@@ -180,13 +214,14 @@ def process_uploaded_cad(uploaded_file):
 # ==========================================
 # Main UI Layout
 # ==========================================
-def main():
-    st.title("3D CAD Model Retrieval System")
-    st.markdown("Upload a **STEP** file to find geometrically similar models from the database using Unsupervised Graph Neural Networks.")
+def render_page(dataset_key):
+    cfg = DATASETS[dataset_key]
+    st.title(f"3D CAD Model Retrieval System - {cfg['title']}")
+    st.markdown(f"Upload a **STEP** file to find geometrically similar models from the **{cfg['title']}** database using Unsupervised Graph Neural Networks.")
     
     # -- Sidebar Settings --
     st.sidebar.header("Retrieval Settings")
-    top_k = st.sidebar.slider("Number of results to show (Top-K):", min_value=1, max_value=20, value=5)
+    top_k = st.sidebar.slider("Number of results to show (Top-K):", min_value=1, max_value=20, value=5, key=f"top_k_{dataset_key}")
     
     st.sidebar.markdown("---")
     st.sidebar.info(
@@ -198,14 +233,14 @@ def main():
 
     # -- Load Backend --
     with st.spinner("Loading AI Models and Vector Database..."):
-        encoder, index, metadata, error_msg = load_backend_system()
+        encoder, index, metadata, error_msg = load_backend_system(dataset_key)
         
     if error_msg:
         st.error(error_msg)
         st.stop()
 
     # -- Main Interaction Area --
-    uploaded_file = st.file_uploader("Upload a .step or .stp file", type=['step', 'stp'])
+    uploaded_file = st.file_uploader("Upload a .step or .stp file", type=['step', 'stp'], key=f"uploader_{dataset_key}")
 
     if uploaded_file is not None:
         st.markdown("---")
@@ -284,11 +319,11 @@ def main():
                 with tab:
                     matched_name = metadata[valid_indices[i]]
 
-                    step_file_path = ORIGINAL_STEP_DIR / f"{matched_name}.step" 
+                    step_file_path = find_step_file(matched_name, cfg["step_dir"]) 
                     
                     st.markdown(f"**Model Name:** `{matched_name}.step` | **Similarity:** {results_data[i]['Confidence']}")
                     
-                    if step_file_path.exists():
+                    if step_file_path is not None:
                         with st.spinner(f"Rendering 3D mesh for Rank {i+1}..."):
                             try:
 
@@ -306,7 +341,14 @@ def main():
                             except Exception as render_err:
                                 st.error(f"Render error: {render_err}")
                     else:
-                        st.warning(f"Could not visualize: Original .step file not found at `{step_file_path}`")
+                        st.warning(f"Could not visualize: original STEP file for `{matched_name}` not found in `{cfg['step_dir']}`")
+
+def main():
+    pages = [
+        st.Page(lambda: render_page("mfcad"), title="MFCAD", icon="⚙️", url_path="mfcad", default=True),
+        st.Page(lambda: render_page("fusion360"), title="Fusion 360", icon="🧩", url_path="fusion360"),
+    ]
+    st.navigation(pages).run()
 
 if __name__ == "__main__":
     main()
