@@ -20,13 +20,13 @@ from tqdm import tqdm
 # ==========================================
 # Replace with the absolute path to your extracted Fusion 360 folder
 # e.g., the folder containing '23495_6366269c', etc.
-RAW_DATA_DIR = Path(r"D:\\Downloads\\fusion360") 
+RAW_DATA_DIR = Path(r"C:\Users\Asus\Desktop\TUM Come\Software Lab\Datasets\a1.0.0_00") 
 
 # Replace with the absolute path to your project's raw step folder
-OUTPUT_STEP_DIR = Path(r"C:\\Users\\di_li\\Desktop\\SWL2026\\data\\raw_step\\fusion360")
+OUTPUT_STEP_DIR = Path(r"C:\Users\Asus\Desktop\TUM Come\Software Lab\GitClone\SoftwareLab\cad_retrieval_swl2026\data\raw_step\fusion360")
 
 # Replace with the absolute path where the label JSON should be saved
-OUTPUT_LABEL_FILE = Path(r"C:\\Users\\di_li\\Desktop\\SWL2026\\data\\raw_step\\fusion360_labels.json")
+OUTPUT_LABEL_FILE = Path(r"C:\Users\Asus\Desktop\TUM Come\Software Lab\GitClone\SoftwareLab\cad_retrieval_swl2026\data\raw_step\fusion360_label\fusion360_labels.json")
 
 def extract_dataset():
     print(f"Scanning raw directory: {RAW_DATA_DIR}")

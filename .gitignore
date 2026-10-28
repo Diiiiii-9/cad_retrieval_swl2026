@@ -6,16 +6,25 @@
 *.step
 *.stp
 *.face_truth
+*.seg
 
 # 2. Processed Graph Data (PyG and Pickle files)
 *.pt
 *.graph
 
 # Ignore the contents of data directories but keep the folder structure
-data/raw_step/*
-!data/raw_step/.gitkeep
-data/processed_graphs/*
-!data/processed_graphs/.gitkeep
+data/raw_step/mfcad/*
+!data/raw_step/mfcad/.gitkeep
+data/raw_step/mfcad_label/*
+!data/raw_step/mfcad_label/.gitkeep
+data/raw_step/fusion360/*
+!data/raw_step/fusion360/.gitkeep
+data/raw_step/fusion360_label/*
+!data/raw_step/fusion360_label/.gitkeep
+data/processed_graphs/mfcad/*
+!data/processed_graphs/mfcad/.gitkeep
+data/processed_graphs/fusion360/*
+!data/processed_graphs/fusion360/.gitkeep
 
 # 3. Model Weights & Vector Databases
 # checkpoints/*
