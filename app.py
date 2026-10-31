@@ -70,6 +70,8 @@ def find_step_file(model_name, step_dir):
 # Import custom backend modules
 from src.data_converter import build_pyg_graph
 from src.networks import CADGraphEncoder
+from src.features import get_transform, RAW_NODE_DIM, RAW_EDGE_DIM, NORM_NODE_DIM, NORM_EDGE_DIM
+from src.run_config import load_run_config, load_encoder_weights
 
 # OCC imports for real-time file reading
 from OCC.Core.STEPControl import STEPControl_Reader
@@ -88,10 +90,14 @@ st.set_page_config(
 # Caching Heavy Components
 # ==========================================
 @st.cache_resource
-def load_backend_system(dataset_key, node_dim=4, edge_dim=3, hidden_dim=128, out_dim=64):
+def load_backend_system(dataset_key):
     """
     Loads the trained PyTorch model, FAISS index, and metadata into memory.
     @st.cache_resource prevents reloading these heavy files on every UI interaction.
+
+    The encoder architecture and feature mode are read from <weights_dir>/config.json
+    (written by training), so any trained config can be served without code changes.
+    Returns (encoder, index, metadata, run_config, error_msg).
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     cfg = DATASETS[dataset_key]
@@ -102,37 +108,38 @@ def load_backend_system(dataset_key, node_dim=4, edge_dim=3, hidden_dim=128, out
     meta_file = cfg["db_dir"] / cfg["meta_file"]
     
     if not index_file.exists() or not meta_file.exists():
-        return None, None, None, f"{cfg['title']} database missing! Please run `{cfg['build_hint']}` first."
+        return None, None, None, None, f"{cfg['title']} database missing! Please run `{cfg['build_hint']}` first."
         
     index = faiss.read_index(str(index_file))
     with open(meta_file, "rb") as f:
         metadata = pickle.load(f)
         
-    # 2. Load PyTorch Encoder
-    model_file = weights_path / "final_encoder_weights.pth"
-    if not model_file.exists():
-        model_file = weights_path / "best_contrastive_model.pth"
-        if not model_file.exists():
-            return None, None, None, f"{cfg['title']} model weights missing in `{weights_path}`! Please run `{cfg['train_hint']}` first."
-            
+    # 2. Load PyTorch Encoder (architecture from config.json, legacy defaults otherwise)
+    run_config, _ = load_run_config(weights_path)
+    normalized = run_config["features"] == "normalized"
     encoder = CADGraphEncoder(
-        node_in_dim=node_dim, 
-        edge_in_dim=edge_dim, 
-        hidden_dim=hidden_dim, 
-        out_dim=out_dim,
-        num_layers=3
+        node_in_dim=NORM_NODE_DIM if normalized else RAW_NODE_DIM,
+        edge_in_dim=NORM_EDGE_DIM if normalized else RAW_EDGE_DIM,
+        hidden_dim=run_config["hidden_dim"],
+        out_dim=run_config["out_dim"],
+        num_layers=run_config["num_layers"],
+        pooling=run_config["pooling"],
     ).to(device)
-    
-    checkpoint = torch.load(model_file, map_location=device, weights_only=True)
-    # Handle both raw state_dicts and nested checkpoint dictionaries
-    if 'encoder_state_dict' in checkpoint:
-        encoder.load_state_dict(checkpoint['encoder_state_dict'])
-    else:
-        encoder.load_state_dict(checkpoint)
-        
+
+    try:
+        load_encoder_weights(encoder, weights_path, device)
+    except FileNotFoundError:
+        return None, None, None, None, f"{cfg['title']} model weights missing in `{weights_path}`! Please run `{cfg['train_hint']}` first."
+    except RuntimeError as e:
+        return None, None, None, None, f"{cfg['title']} weights don't match the model config in `{weights_path}`: {e}"
+
     encoder.eval()
+
+    if index.d != run_config["out_dim"]:
+        return None, None, None, None, (f"{cfg['title']} index dimension ({index.d}) does not match the encoder "
+                                        f"(out_dim={run_config['out_dim']}). Rebuild it with `{cfg['build_hint']}`.")
     
-    return encoder, index, metadata, None
+    return encoder, index, metadata, run_config, None
 
 def render_shape_to_plotly(shape):
     """
@@ -192,7 +199,7 @@ def process_uploaded_cad(uploaded_file):
         
         if status != 1:
             os.unlink(tmp_filepath)
-            return None, "Failed to parse STEP file format."
+            return None, None, "Failed to parse STEP file format."
             
         reader.TransferRoots()
         shape = reader.OneShape()
@@ -204,12 +211,12 @@ def process_uploaded_cad(uploaded_file):
         os.unlink(tmp_filepath)
         
         if graph_data is None:
-            return None, "Successfully read file, but no valid B-Rep faces were found."
+            return None, None, "Successfully read file, but no valid B-Rep faces were found."
             
         return graph_data, shape, None
         
     except Exception as e:
-        return None, f"Critical error during processing: {str(e)}"
+        return None, None, f"Critical error during processing: {str(e)}"
 
 # ==========================================
 # Main UI Layout
@@ -233,11 +240,17 @@ def render_page(dataset_key):
 
     # -- Load Backend --
     with st.spinner("Loading AI Models and Vector Database..."):
-        encoder, index, metadata, error_msg = load_backend_system(dataset_key)
+        encoder, index, metadata, run_config, error_msg = load_backend_system(dataset_key)
         
     if error_msg:
         st.error(error_msg)
         st.stop()
+
+    st.sidebar.caption(
+        f"Model: {run_config['num_layers']} GINE layers, {run_config['pooling']} pooling, "
+        f"{run_config['out_dim']}-D embedding, {run_config['features']} features | "
+        f"Database: {index.ntotal} models"
+    )
 
     # -- Main Interaction Area --
     uploaded_file = st.file_uploader("Upload a .step or .stp file", type=['step', 'stp'], key=f"uploader_{dataset_key}")
@@ -254,10 +267,13 @@ def render_page(dataset_key):
                 st.error(err)
                 st.stop()
                 
-            # 2. Prepare Batch for Model
+            # 2. Apply the same feature transform used at training time, then batch
+            transform = get_transform(run_config["features"])
+            if transform is not None:
+                graph_data = transform(graph_data)
             batch = Batch.from_data_list([graph_data]).to(device)
-            edge_index = batch.edge_index if batch.edge_index is not None else torch.empty((2, 0), dtype=torch.long, device=device)
-            edge_attr = batch.edge_attr if batch.edge_attr is not None else torch.empty((0, 3), dtype=torch.float, device=device)
+            edge_index = batch.edge_index
+            edge_attr = batch.edge_attr
             
             # 3. Generate Embedding
             with torch.no_grad():
@@ -282,7 +298,7 @@ def render_page(dataset_key):
             results_data.append({
                 "Rank": rank + 1,
                 "Retrieved CAD Model": f"{matched_filename}.step",
-                "Confidence": f"{sim_score:.2f}%"
+                "Cosine similarity": f"{sim_score:.2f}%"
             })
             
         st.success(f"Successfully retrieved top {len(results_data)} matches from a database of {index.ntotal} models in milliseconds!")
@@ -303,7 +319,7 @@ def render_page(dataset_key):
                 use_container_width=True,
                 column_config={
                     "Rank": st.column_config.NumberColumn(width="small"),
-                    "Confidence": st.column_config.TextColumn(width="medium")
+                    "Cosine similarity": st.column_config.TextColumn(width="medium")
                 }
             )
         
@@ -321,7 +337,7 @@ def render_page(dataset_key):
 
                     step_file_path = find_step_file(matched_name, cfg["step_dir"]) 
                     
-                    st.markdown(f"**Model Name:** `{matched_name}.step` | **Similarity:** {results_data[i]['Confidence']}")
+                    st.markdown(f"**Model Name:** `{matched_name}.step` | **Similarity:** {results_data[i]['Cosine similarity']}")
                     
                     if step_file_path is not None:
                         with st.spinner(f"Rendering 3D mesh for Rank {i+1}..."):
