@@ -14,8 +14,12 @@ import os
 import argparse
 import pathlib
 import logging
-import copy
+import json
+import random
+import time
 from tqdm import tqdm
+
+import numpy as np
 
 import torch
 import torch.nn.functional as F
@@ -27,13 +31,15 @@ from torch_geometric.utils import dropout_edge
 # Import custom modules
 from src.dataset import CADGraphDataset
 from src.networks import CADGraphEncoder, CADContrastiveModel
+from src.features import FEATURE_MODES, get_transform, noise_dims_for
+from src.run_config import save_run_config
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 # ==========================================
 # Data Augmentation Strategy
 # ==========================================
-def augment_graph_batch(batch, edge_drop_rate=0.15, feature_noise_std=0.02, aug_mode="both"):
+def augment_graph_batch(batch, edge_drop_rate=0.15, feature_noise_std=0.02, aug_mode="both", noise_dims=None):
     """
     Creates an augmented view of a PyG Batch for contrastive learning.
     
@@ -47,6 +53,10 @@ def augment_graph_batch(batch, edge_drop_rate=0.15, feature_noise_std=0.02, aug_
             "both"          -- edge dropout AND feature noise (original behavior)
             "edge_drop"     -- edge dropout only
             "feature_noise" -- feature noise only
+        noise_dims (int or None): If set, Gaussian noise is only added to the first
+            `noise_dims` node-feature columns (the continuous ones). Used with
+            --features normalized so that one-hot category columns stay clean.
+            None = add noise to every column (original behaviour).
     """
     if aug_mode not in ("both", "edge_drop", "feature_noise"):
         raise ValueError(f"Unknown aug_mode: {aug_mode!r}. Must be 'both', 'edge_drop', or 'feature_noise'.")
@@ -70,8 +80,10 @@ def augment_graph_batch(batch, edge_drop_rate=0.15, feature_noise_std=0.02, aug_
     # 2. Node Feature Noise
     if aug_mode in ("both", "feature_noise"):
         if aug_batch.x is not None:
-            noise = torch.randn_like(aug_batch.x) * feature_noise_std
-            aug_batch.x = aug_batch.x + noise
+            x = aug_batch.x.clone()
+            cols = slice(None) if noise_dims is None else slice(0, noise_dims)
+            x[:, cols] = x[:, cols] + torch.randn_like(x[:, cols]) * feature_noise_std
+            aug_batch.x = x
         
     return aug_batch
 
@@ -106,10 +118,19 @@ def info_nce_loss(z1, z2, temperature=0.1):
 # ==========================================
 # Main Training Loop
 # ==========================================
-def train():
-    parser = argparse.ArgumentParser(description="Train CAD Contrastive Model")
-    parser.add_argument("--data_dir", type=str, default="./data/processed_graphs/mfcad", help="Path to .pt files")
-    parser.add_argument("--save_dir", type=str, default="./checkpoints", help="Directory to save weights")
+def set_seed(seed):
+    """Makes runs repeatable (up to non-deterministic CUDA scatter ops in PyG)."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+
+def build_arg_parser(default_data_dir="./data/processed_graphs/mfcad", default_save_dir="./checkpoints",
+                     description="Train CAD Contrastive Model"):
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("--data_dir", type=str, default=default_data_dir, help="Path to .pt files")
+    parser.add_argument("--save_dir", type=str, default=default_save_dir, help="Directory to save weights")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
@@ -119,7 +140,20 @@ def train():
     parser.add_argument("--pooling", type=str, default="mean", choices=["mean", "max", "max_mean"], help="Graph readout strategy: mean, max, or max_mean (concatenated)")
     parser.add_argument("--aug_mode", type=str, default="both", choices=["both", "edge_drop", "feature_noise"], help="Which contrastive augmentation(s) to apply")
     parser.add_argument("--num_layers", type=int, default=3, help="Number of GINE message-passing layers")
-    args = parser.parse_args()
+    parser.add_argument("--dropout", type=float, default=0.2, help="Dropout inside the encoder")
+    parser.add_argument("--features", type=str, default="raw", choices=list(FEATURE_MODES),
+                        help="'raw' = original 4/3-dim features; 'normalized' = scale-invariant sizes + one-hot types (see src/features.py)")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed (run 3 seeds to report mean +- std)")
+    parser.add_argument("--num_workers", type=int, default=0, help="DataLoader worker processes")
+    return parser
+
+
+def train(argv=None, dataset_cls=CADGraphDataset, parser=None):
+    """Trains one config. `argv=None` reads sys.argv; `dataset_cls`/`parser` let the
+    Fusion 360 entry point reuse this exact loop with different defaults."""
+    parser = parser or build_arg_parser()
+    args = parser.parse_args(argv)
+    set_seed(args.seed)
 
     # 1. Hardware setup
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -132,20 +166,22 @@ def train():
     # 3. Load Dataset
     logging.info("Loading dataset...")
     try:
-        dataset = CADGraphDataset(root_dir=args.data_dir)
+        dataset = dataset_cls(root_dir=args.data_dir, transform=get_transform(args.features))
         node_dim, edge_dim = dataset.get_feature_dimensions()
         logging.info(f"Dataset loaded: {len(dataset)} graphs found.")
-        logging.info(f"Detected Node Features: {node_dim}, Edge Features: {edge_dim}")
+        logging.info(f"Feature mode: {args.features} -> Node Features: {node_dim}, Edge Features: {edge_dim}")
     except Exception as e:
         logging.error(f"Failed to load dataset: {e}")
-        return
+        return None
 
     if len(dataset) < args.batch_size:
         logging.warning("Dataset is smaller than batch size. Reducing batch size.")
-        args.batch_size = max(1, len(dataset) // 2)
+        args.batch_size = max(2, len(dataset) // 2)
 
     # drop_last=True is CRITICAL for contrastive learning to ensure stable BatchNorm and Loss calculations
-    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    generator = torch.Generator().manual_seed(args.seed)
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, drop_last=True,
+                            generator=generator, num_workers=args.num_workers)
 
     # 4. Initialize Models
     encoder = CADGraphEncoder(
@@ -154,11 +190,19 @@ def train():
         hidden_dim=args.hidden_dim, 
         out_dim=args.out_dim,
         num_layers=args.num_layers,
+        dropout=args.dropout,
         pooling=args.pooling
     )
     
     # Wrap encoder in Contrastive Model (adds the projection head)
     model = CADContrastiveModel(encoder, hidden_dim=args.out_dim, proj_dim=args.out_dim // 2).to(device)
+
+    # Record exactly how this checkpoint was produced (read back by retrieval.py / app.py / evaluation)
+    run_config = vars(args).copy()
+    run_config.update({"node_in_dim": node_dim, "edge_in_dim": edge_dim, "num_graphs": len(dataset),
+                       "dataset_class": dataset_cls.__name__})
+    save_run_config(save_path, run_config)
+    noise_dims = noise_dims_for(args.features)
     
     # 5. Optimizer & Scheduler
     optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -167,6 +211,8 @@ def train():
 
     # 6. Training Loop
     best_loss = float('inf')
+    history = []
+    start_time = time.time()
     
     for epoch in range(1, args.epochs + 1):
         model.train()
@@ -179,8 +225,8 @@ def train():
             batch = batch.to(device)
             
             # Step A: Generate two augmented views of the batch
-            view1 = augment_graph_batch(batch, edge_drop_rate=0.1, feature_noise_std=0.01, aug_mode=args.aug_mode)
-            view2 = augment_graph_batch(batch, edge_drop_rate=0.2, feature_noise_std=0.03, aug_mode=args.aug_mode)
+            view1 = augment_graph_batch(batch, edge_drop_rate=0.1, feature_noise_std=0.01, aug_mode=args.aug_mode, noise_dims=noise_dims)
+            view2 = augment_graph_batch(batch, edge_drop_rate=0.2, feature_noise_std=0.03, aug_mode=args.aug_mode, noise_dims=noise_dims)
             
             # Step B: Forward Pass
             optimizer.zero_grad()
@@ -200,6 +246,11 @@ def train():
         scheduler.step()
         avg_epoch_loss = epoch_loss / len(dataloader)
         logging.info(f"Epoch [{epoch}/{args.epochs}] - Average Loss: {avg_epoch_loss:.4f} - LR: {scheduler.get_last_lr()[0]:.6f}")
+        history.append({"epoch": epoch, "loss": avg_epoch_loss, "lr": scheduler.get_last_lr()[0],
+                        "elapsed_s": round(time.time() - start_time, 1)})
+        # Written every epoch so a killed job still leaves a usable loss curve for the report
+        with open(save_path / "train_history.json", "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=1)
         
         # Step F: Save Best Checkpoint
         if avg_epoch_loss < best_loss:
@@ -216,6 +267,7 @@ def train():
     # Save final model
     torch.save(model.encoder.state_dict(), save_path / "final_encoder_weights.pth")
     logging.info(f"[IMPORTANT] Training Complete! Final encoder saved to {save_path / 'final_encoder_weights.pth'}")
+    return save_path
 
 if __name__ == "__main__":
     train()
