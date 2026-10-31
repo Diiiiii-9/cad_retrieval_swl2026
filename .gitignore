@@ -60,3 +60,13 @@ wandb/      # Weights & Biases logs (if used later)
 Thumbs.db
 .vscode/
 .idea/
+# 9. Large outputs of the LRZ experiment runs (keep configs, loss curves and results; not weights/indices)
+logs/
+checkpoints/final_mfcad/**/*.pth
+checkpoints/final_mfcad/**/*.bin
+checkpoints/final_mfcad/**/*.pkl
+checkpoints/sweep_fusion360/**/*.pth
+checkpoints/sweep_fusion360/**/*.bin
+checkpoints/sweep_fusion360/**/*.pkl
+checkpoints/fusion360_from_mfcad/
+.pytest_cache/
