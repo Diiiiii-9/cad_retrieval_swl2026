@@ -94,8 +94,11 @@ class CADGraphDataset(Dataset):
         if self.len() == 0:
             return 0, 0
             
-        sample_data = self.get(0)
-        
+        # NOTE: self[0] (not self.get(0)) so that the dataset transform is applied --
+        # otherwise a feature transform (e.g. NormalizeCADFeatures) would report the
+        # raw dimensions and the encoder would be built with the wrong input size.
+        sample_data = self[0]
+
         # Check node feature shape (N, num_node_features)
         num_node_features = sample_data.x.shape[1] if sample_data.x is not None else 0
         

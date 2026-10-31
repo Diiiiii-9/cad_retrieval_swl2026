@@ -14,57 +14,62 @@ This project presents an end-to-end prototype for **3D CAD Model Retrieval** usi
 2. **Unsupervised Contrastive Learning:** Trains a GINE (Graph Isomorphism Network) Encoder using InfoNCE loss and graph augmentations (edge dropout, node feature noise) without requiring manually labeled data (SimCLR framework). Architecture choices (pooling strategy, layer depth) and training behavior (augmentation strategy, temperature, embedding size) are all configurable via CLI flags — see [Ablation Study Pipeline](#-ablation-study-pipeline) below.
 3. **Fast Similarity Search:** Utilizes the FAISS vector database for millisecond-level cosine similarity retrieval using L2-normalized graph embeddings.
 4. **Interactive 3D Web UI:** Features a Streamlit-based dashboard with dynamic STEP-to-Mesh conversion and real-time interactive 3D rendering using `Plotly` and `Trimesh`.
-5. **Comprehensive Evaluation & Ablation Studies:** A manufacturing-aware retrieval evaluation (Recall@K, MRR) is used to systematically ablate five independent design choices: embedding dimension, contrastive temperature, pooling strategy, augmentation mode, and GNN layer depth. Each ablation isolates exactly one variable while holding all others fixed, with results consolidated in `notebooks/ablation_study_final.ipynb`.
+5. **Comprehensive Evaluation & Ablation Studies:** Retrieval is evaluated against three ground truths on MFCAD (file-name class, sub-class, machining-feature histogram) and against 220 hand-labeled Fusion 360 parts, always next to a **random** and a **hand-crafted (non-learned) baseline** (`scripts/evaluate_retrieval.py`). Five design choices are ablated one at a time: embedding dimension, contrastive temperature, pooling strategy, augmentation mode, and GNN layer depth.
+6. **Two Datasets:** MFCAD (15,488 parts) and the Fusion 360 Gallery Assembly dataset (15,436 parts), sharing one feature extractor, one model and one training loop.
+7. **Reproducible Runs:** every training run writes a `config.json` (all hyper-parameters, seed, feature mode) and a `train_history.json` (loss curve). Index building, evaluation and the web app read the config back, so a checkpoint can never be loaded with the wrong architecture.
 
 
 ## 📂 Repository Structure
 ```text
-cad_retrieval_project/
+cad_retrieval_swl2026/
 │
-├── data/                      # Data storage (Ignored by Git)
-│   ├── raw_step/mfcad/        # Place original .step/.stp files here
-│   ├── raw_step/mfcad_label/  # Ground-truth per-face labels (.face_truth), used only for evaluation
-│   └── processed_graphs/mfcad/# Generated PyG .pt files
+├── data/                        # Data storage (contents ignored by Git)
+│   ├── raw_step/mfcad/          # MFCAD .step files
+│   ├── raw_step/mfcad_label/    # MFCAD per-face labels (.face_truth), evaluation only
+│   ├── raw_step/fusion360/      # Fusion 360 .step files (tools/extract_fusion360.py)
+│   ├── processed_graphs/        # Generated PyG .pt graphs (mfcad/, fusion360/)
+│   └── fusion360_labels.json    # 220 hand-labeled Fusion 360 parts (tools/labeling_tool.py)
 │
-├── checkpoints/               # Trained model weights and FAISS indices
-│   ├── best_contrastive_model.pth
-│   ├── final_encoder_weights.pth
-│   ├── faiss_index.bin        # FAISS vector database
-│   ├── metadata.pkl           # Filename mapping for the vector index
-│   └── sweep/                 # One subfolder per ablation config (see below), each
-│                               # containing its own weights + FAISS index + metadata
+├── src/                         # Core pipeline
+│   ├── data_converter.py        # Parallel STEP -> B-Rep graph converter (pythonocc)
+│   ├── dataset.py               # PyG dataset with model-name tracking
+│   ├── features.py              # Raw vs. normalized node/edge features (--features)
+│   ├── networks.py              # GINE encoder (mean/max/max_mean pooling) + SimCLR wrapper
+│   ├── train_unsupervised.py    # Contrastive training (InfoNCE, augmentations, seeds)
+│   ├── retrieval.py             # FAISS index builder + query CLI
+│   ├── run_config.py            # config.json save/load, weight loading
+│   └── fusion360/               # Fusion 360 entry points (same loop, other defaults)
+│       ├── build_fusion360_graphs.py
+│       ├── dataset_fusion360.py
+│       ├── train_unsupervised_fusion360.py
+│       └── retrieval_fusion360.py
 │
-├── src/                       # Core backend logic
-│   ├── __init__.py
-│   ├── data_converter.py      # Multiprocessing STEP-to-Graph converter
-│   ├── dataset.py             # PyG Dataset loader with ID tracking
-│   ├── networks.py            # GINE Encoder and SimCLR Wrapper architectures
-│   │                          #   supports configurable pooling (mean / max / max_mean)
-│   │                          #   and configurable layer depth
-│   ├── train_unsupervised.py  # Contrastive training loop and InfoNCE loss
-│   │                          #   supports configurable embedding size, temperature,
-│   │                          #   pooling, augmentation mode, and layer depth
-│   └── retrieval.py           # FAISS vector database builder and query logic
-│                               #   must be called with the SAME --pooling/--num_layers
-│                               #   a checkpoint was trained with
+├── scripts/
+│   ├── evaluate_retrieval.py    # Evaluation + random/hand-crafted baselines -> results/
+│   ├── plot_results.py          # Bar charts for the report from results/*.json
+│   ├── check_duplicates.py      # Real duplicate parts vs. embedding collapse (Fusion 360)
+│   ├── evaluate_sweep.py        # Original histogram-metric evaluation (kept for reference)
+│   ├── lrz/                     # SLURM jobs for the LRZ AI Systems (see below)
+│   └── *.ps1                    # Original Windows sweep scripts used for the 30-epoch ablation
 │
-├── notebooks/                 # Exploratory data analysis & Ablation studies
-│   ├── ablation_study_final.ipynb   # Primary deliverable: all 5 ablations, self-contained
-│   ├── ablation_study_mfcad.ipynb   # Single-config retrieval evaluation (Recall@K, MRR)
-│   └── ablation_visualization.ipynb # Legacy exploratory notebook (superseded by ablation_study_final.ipynb)
+├── tools/                       # Dataset helpers
+│   ├── extract_fusion360.py     # Pulls STEP files out of the Fusion 360 assembly dataset
+│   ├── batch_convert.py         # STEP -> STL (for the labeling tool)
+│   └── labeling_tool.py         # Streamlit tool used to label Fusion 360 parts
 │
-├── scripts/                    # Sweep/automation scripts (moved out of repo root)
-│   ├── evaluate_sweep.py       # Evaluates every checkpoint under checkpoints/sweep/
-│   │                           #   against the shared manufacturing-aware metric
-│   │                           #   (same logic as ablation_study_final.ipynb, script form)
-│   ├── run_*_sweep.ps1         # Trains a batch of ablation configs sequentially (Windows)
-│   └── build_*_databases.ps1   # Builds the FAISS index for a batch of ablation configs
-│                                #   all scripts in this folder resolve paths relative to
-│                                #   the repo root, so they can be run from anywhere
+├── checkpoints/                 # Trained weights + FAISS indices (one folder per run)
+│   ├── (root)                   # Model served by the MFCAD page of the app
+│   ├── fusion360/               # Model served by the Fusion 360 page of the app
+│   └── sweep/                   # 12 ablation runs (30 epochs each)
 │
-├── app.py                     # Web Interface (Streamlit)
-├── requirements.txt           # Dependency list
-└── README.md                  # Project documentation
+├── results/                     # Evaluation tables (.md/.csv/.json) and charts (.png)
+├── notebooks/
+│   ├── dataset_exploration.ipynb    # MFCAD statistics and class imbalance
+│   └── ablation_study_final.ipynb   # Original ablation analysis (histogram metric)
+├── tests/                       # pytest suite (synthetic graphs, runs on CPU in seconds)
+├── app.py                       # Streamlit web interface
+├── README_LRZ.md                # LRZ cluster setup
+└── requirements.txt
 ```
 
 
@@ -125,7 +130,10 @@ python -m src.train_unsupervised --data_dir ./data/processed_graphs/mfcad --epoc
 | `--pooling` | `mean` | Graph readout strategy: `mean`, `max`, or `max_mean` (concatenated) |
 | `--aug_mode` | `both` | Which contrastive augmentation(s) to apply: `both`, `edge_drop`, or `feature_noise` |
 | `--num_layers` | `3` | Number of GINE message-passing layers |
-| `--save_dir` | `./checkpoints` | Where to save weights for this run |
+| `--features` | `raw` | `raw` (original 4/3-dim features) or `normalized` (scale-invariant sizes + one-hot surface/curve types, see `src/features.py`) |
+| `--seed` | `0` | Random seed; run several seeds to report mean ± std |
+| `--dropout` | `0.2` | Dropout inside the encoder |
+| `--save_dir` | `./checkpoints` | Where to save weights, `config.json` and `train_history.json` for this run |
 
 ### Step 3: Build Vector Database
 
@@ -135,46 +143,52 @@ Pass all processed CAD graphs through the trained encoder to generate embeddings
 python -m src.retrieval --build --data_dir ./data/processed_graphs/mfcad --save_dir ./checkpoints
 ```
 
-**⚠️ Important:** if you trained with non-default `--pooling`, `--out_dim`, or `--num_layers`, you must pass the **same values** here, e.g.:
+The architecture (`--pooling`, `--out_dim`, `--num_layers`, `--features`) is read automatically from the run's `config.json`. Only checkpoints trained before `config.json` existed (the ones currently in `checkpoints/sweep/`) need these flags passed by hand, e.g.:
 
 ```bash
 python -m src.retrieval --build --save_dir ./checkpoints/sweep/pooling_max_mean --pooling max_mean --out_dim 64
 ```
 
-Mismatched values will either crash on weight loading or silently build an index from a wrong-shaped network.
+Fusion 360 works the same way: `python -m src.fusion360.retrieval_fusion360 --build`.
 
 ### Step 4: Launch 3D Web Application
 
-Start the interactive 3D retrieval dashboard. Upload a query `.step` file to instantly find and render the Top-K most similar geometric models from your database.
+Start the interactive 3D retrieval dashboard. Upload a query `.step` file to instantly find and render the Top-K most similar geometric models from your database. The app has one page per dataset and serves the model in `checkpoints/` (MFCAD) and `checkpoints/fusion360/` (Fusion 360); to serve a different run, copy its folder contents there. The architecture is read from `config.json`.
 
 ```bash
 streamlit run app.py
 ```
 
-### Step 5: Post-Training Evaluation & Ablation Study
-
-Run the primary ablation notebook to re-evaluate every trained config and reproduce the full results table, written interpretation, and charts:
+### Step 5: Evaluation
 
 ```bash
-jupyter notebook notebooks/ablation_study_final.ipynb
+# MFCAD: any number of run folders; runs named <config>_s<seed> are averaged over seeds
+python scripts/evaluate_retrieval.py --dataset mfcad --runs checkpoints/sweep/* \
+    --graphs_dir data/processed_graphs/mfcad --label_dir data/raw_step/mfcad_label --out results/mfcad
+
+# Fusion 360 (uses the 220 hand-labeled parts)
+python scripts/evaluate_retrieval.py --dataset fusion360 --runs checkpoints/fusion360 \
+    --labels data/fusion360_labels.json --graphs_dir data/processed_graphs/fusion360 --out results/fusion360
+
+# Charts for the report
+python scripts/plot_results.py results/mfcad.json --metric P@1
 ```
 
-This notebook assumes the following are already built and present in `checkpoints/sweep/<config_name>/`: `final_encoder_weights.pth`, `faiss_index.bin`, and `metadata.pkl`, for each config it evaluates. See [Ablation Study Pipeline](#-ablation-study-pipeline) below for how to (re)generate these.
-
+`--graphs_dir` enables the hand-crafted baseline and `--label_dir` the machining-feature-histogram metric; both are optional. Run `pytest tests` to check the pipeline end to end on synthetic data.
 
 ## 🔬 Ablation Study Pipeline
 
 Five independent design choices are ablated, each isolating exactly one variable while holding everything else (epochs, dataset, batch size, and all other flags above) fixed:
 
-| Ablation | Values tested | Key finding |
+| Ablation | Values tested | Finding (30 epochs, single run per config) |
 |---|---|---|
-| Embedding dimension (`--out_dim`) | 32, 64, 128, 256 | Monotonic improvement, no ceiling found at 256 |
-| Temperature (`--temp`) | 0.05, 0.1, 0.5 | Inverted-U; 0.1 is optimal |
-| Pooling (`--pooling`) | mean, max, max_mean | max_mean slightly outperforms mean; max alone underperforms |
-| Augmentation (`--aug_mode`) | both, edge_drop, feature_noise | Edge dropout alone nearly matches the combined baseline; feature noise alone is the weakest config tested |
-| Layer depth (`--num_layers`) | 2, 3, 5 | Diminishing returns past 3 layers |
+| Embedding dimension (`--out_dim`) | 32, 64, 128, 256 | 32 is clearly worst; 64–256 are within ~1 point of each other |
+| Temperature (`--temp`) | 0.05, 0.1, 0.5 | 0.1 is best on every metric; 0.5 is the worst config overall |
+| Pooling (`--pooling`) | mean, max, max_mean | Metric-dependent: max/max_mean are best on class labels, max is below mean on the histogram metric |
+| Augmentation (`--aug_mode`) | both, edge_drop, feature_noise | Edge dropout carries the signal; feature noise alone is clearly weaker (with raw features the noise also corrupts the type columns, fixed by `--features normalized`) |
+| Layer depth (`--num_layers`) | 2, 3, 5 | No meaningful difference |
 
-Full methodology, results table, and written interpretation (including honest single-run caveats) live in `notebooks/ablation_study_final.ipynb`.
+Differences below ~1 percentage point are within what a different random seed can produce; `scripts/lrz/submit_mfcad_final.sh` re-runs the key configs with 3 seeds to check them. The original analysis is in `notebooks/ablation_study_final.ipynb`; the baseline comparison is in `results/`.
 
 **To reproduce or extend an ablation:**
 
@@ -183,6 +197,40 @@ Full methodology, results table, and written interpretation (including honest si
 3. **Evaluate** — add the new config's settings to the `CONFIGS` list in `scripts/evaluate_sweep.py` (or directly in `ablation_study_final.ipynb`) and re-run with `python scripts/evaluate_sweep.py`. The evaluation uses a manufacturing-aware proxy: two models are considered a retrieval "match" if their per-face machining-feature-class histograms have cosine similarity ≥ 0.95.
 
 **Note on `data/raw_step/mfcad_label/`:** this folder contains the ground-truth `.face_truth` label files used *only* for evaluation (not for training, since the model is unsupervised). If missing, it can be regenerated by cloning the original [`hducg/MFCAD`](https://github.com/hducg/MFCAD) dataset repository and copying its `.face_truth` files (found under `dataset/step/`) into `data/raw_step/mfcad_label/`.
+
+
+## 📊 Results
+
+Evaluation of the committed checkpoints (`results/mfcad_ablation_30ep.md`, `results/fusion360_existing.md`). P@k = share of the top-k retrieved parts that are relevant; random = random embeddings (mean of 5 draws).
+
+| Dataset / ground truth | Queries | Best GNN config P@1 | Default GNN P@1 | Random P@1 |
+|---|---|---|---|---|
+| MFCAD, file-name class (15 classes) | 15,488 | 39.9% (max pooling) | 38.0% | 15.5% |
+| MFCAD, file-name sub-class (~120) | 15,488 | 17.2% (max_mean pooling) | 16.8% | 2.2% |
+| Fusion 360, manual category (~20) | 220 | – | 36.4% | 5.3% |
+
+The learned embeddings retrieve a part of the same class 2.5–8× more often than chance.
+
+**Open issue (Fusion 360):** 85% of the 15,436 Fusion 360 parts have a near-identical twin in the current embedding space (cosine > 0.9999; only ~8.5k distinct vectors), versus 0.1% on MFCAD. `scripts/check_duplicates.py` tells whether these are real duplicate bodies (common in assemblies) or different parts collapsing onto one vector. The hand-crafted baseline needs the processed graphs, so it is computed on the cluster (`scripts/lrz/evaluate_all.sh`).
+
+![MFCAD P@1 by config](results/mfcad_ablation_30ep_class_L1_Pat1.png)
+
+
+## 🖥️ Final Experiments on the LRZ AI Systems
+
+Setup is described in `README_LRZ.md`. All jobs run from the repo root:
+
+```bash
+bash scripts/lrz/submit_mfcad_final.sh         # MFCAD: raw vs normalized features, best configs, 3 seeds (12 GPU jobs)
+bash scripts/lrz/submit_fusion360_ablation.sh  # Fusion 360: the five ablations (12 GPU jobs)
+squeue -u $USER                                # monitor; logs go to logs/
+
+# when the jobs are done, on a CPU node:
+salloc -p lrz-cpu -N 1 --time=01:00:00
+bash scripts/lrz/evaluate_all.sh               # writes results/*.md|csv|json (incl. cross-dataset transfer)
+```
+
+Prefix any submit script with `DRY_RUN=1` to only print the jobs, or set `EPOCHS=` / `SEEDS=` to change them.
 
 
 ## 👥 Team

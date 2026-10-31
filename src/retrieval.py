@@ -23,23 +23,37 @@ import faiss
 # Import custom modules
 from src.dataset import CADGraphDataset
 from src.networks import CADGraphEncoder
+from src.features import get_transform
+from src.run_config import resolve_arch, load_encoder_weights
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
 # ==========================================
 # Database Builder
 # ==========================================
-def build_database(args):
+def build_database(args, dataset_cls=CADGraphDataset):
     """
     Passes all CAD models through the trained encoder, extracts embeddings,
     and builds a FAISS Index.
+
+    Architecture settings (hidden_dim/out_dim/num_layers/pooling/features) are read
+    from <weights_dir>/config.json when it exists, so they can't be mismatched.
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     logging.info(f"Building Database on: {device}")
 
+    weights_dir = args.weights_dir or args.save_dir
+    args, found = resolve_arch(args, weights_dir)
+    if found:
+        logging.info(f"Using architecture from {weights_dir}/config.json: "
+                     f"out_dim={args.out_dim}, layers={args.num_layers}, pooling={args.pooling}, features={args.features}")
+    else:
+        logging.warning(f"No config.json in {weights_dir}; using CLI values "
+                        f"(out_dim={args.out_dim}, layers={args.num_layers}, pooling={args.pooling}, features={args.features}).")
+
     # 1. Load Dataset
     try:
-        dataset = CADGraphDataset(root_dir=args.data_dir)
+        dataset = dataset_cls(root_dir=args.data_dir, transform=get_transform(args.features))
         node_dim, edge_dim = dataset.get_feature_dimensions()
         logging.info(f"Loaded {len(dataset)} graphs for the database.")
     except Exception as e:
@@ -59,17 +73,8 @@ def build_database(args):
         pooling=args.pooling
     ).to(device)
 
-    weights_path = pathlib.Path(args.save_dir) / "final_encoder_weights.pth"
-    if not weights_path.exists():
-        # Fallback to the best contrastive checkpoint if final is not found
-        weights_path = pathlib.Path(args.save_dir) / "best_contrastive_model.pth"
-        if not weights_path.exists():
-            raise FileNotFoundError(f"No trained weights found in {args.save_dir}. Run training first!")
-        
-        checkpoint = torch.load(weights_path, map_location=device)
-        encoder.load_state_dict(checkpoint['encoder_state_dict'])
-    else:
-        encoder.load_state_dict(torch.load(weights_path, map_location=device))
+    loaded = load_encoder_weights(encoder, weights_dir, device)
+    logging.info(f"Weights loaded from {loaded}")
         
     encoder.eval()
     logging.info("Trained Encoder loaded successfully.")
@@ -103,9 +108,10 @@ def build_database(args):
 
     # 5. Save Database and Metadata
     db_path = pathlib.Path(args.save_dir)
-    faiss.write_index(index, str(db_path / "faiss_index.bin"))
+    db_path.mkdir(parents=True, exist_ok=True)
+    faiss.write_index(index, str(db_path / args.index_name))
     
-    with open(db_path / "metadata.pkl", "wb") as f:
+    with open(db_path / args.meta_name, "wb") as f:
         pickle.dump(all_names, f)
         
     logging.info("[Pass] FAISS database and metadata successfully saved!")
@@ -119,8 +125,8 @@ def query_database(args):
     finds the Top-K most similar models.
     """
     db_path = pathlib.Path(args.save_dir)
-    index_file = db_path / "faiss_index.bin"
-    meta_file = db_path / "metadata.pkl"
+    index_file = db_path / args.index_name
+    meta_file = db_path / args.meta_name
     
     if not index_file.exists() or not meta_file.exists():
         logging.error("Database files missing. Please run with --build first.")
@@ -154,9 +160,13 @@ def query_database(args):
     print(f"Retrieval Results for: {args.query}")
     print("="*50)
     
-    for rank, (dist, idx) in enumerate(zip(distances[0], indices[0])):
-        if idx == query_idx:
+    rank = 0
+    for dist, idx in zip(distances[0], indices[0]):
+        if idx == query_idx or idx == -1:
             continue # Skip the self-match
+        rank += 1
+        if rank > args.top_k:
+            break
         
         sim_score = dist * 100 # Inner product converted to percentage
         print(f"Rank {rank}: {cad_names[idx]:<25} | Similarity: {sim_score:.2f}%")
@@ -164,26 +174,41 @@ def query_database(args):
     print("="*50 + "\n")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="CAD Model Vector Retrieval")
-    parser.add_argument("--data_dir", type=str, default="./data/processed_graphs/mfcad", help="Path to .pt files")
-    parser.add_argument("--save_dir", type=str, default="./checkpoints", help="Directory containing weights & db")
-    parser.add_argument("--hidden_dim", type=int, default=128, help="GNN hidden dimension")
-    parser.add_argument("--out_dim", type=int, default=64, help="Final CAD embedding dimension")
-    parser.add_argument("--pooling", type=str, default="mean", choices=["mean", "max", "max_mean"], help="Graph readout strategy used when this checkpoint was trained")
-    parser.add_argument("--num_layers", type=int, default=3, help="Number of GINE layers used when this checkpoint was trained")
+def build_arg_parser(default_data_dir="./data/processed_graphs/mfcad", default_save_dir="./checkpoints",
+                     index_name="faiss_index.bin", meta_name="metadata.pkl",
+                     description="CAD Model Vector Retrieval"):
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("--data_dir", type=str, default=default_data_dir, help="Path to .pt files")
+    parser.add_argument("--save_dir", type=str, default=default_save_dir, help="Directory where the FAISS index + metadata are written/read")
+    parser.add_argument("--weights_dir", type=str, default=None, help="Directory with the trained encoder (+ config.json). Defaults to --save_dir")
+    parser.add_argument("--index_name", type=str, default=index_name, help="FAISS index file name inside --save_dir")
+    parser.add_argument("--meta_name", type=str, default=meta_name, help="Metadata file name inside --save_dir")
+    # Architecture flags: only used for old checkpoints WITHOUT config.json
+    parser.add_argument("--hidden_dim", type=int, default=128, help="GNN hidden dimension (legacy checkpoints only)")
+    parser.add_argument("--out_dim", type=int, default=64, help="Final CAD embedding dimension (legacy checkpoints only)")
+    parser.add_argument("--pooling", type=str, default="mean", choices=["mean", "max", "max_mean"], help="Readout used at training time (legacy checkpoints only)")
+    parser.add_argument("--num_layers", type=int, default=3, help="Number of GINE layers used at training time (legacy checkpoints only)")
+    parser.add_argument("--features", type=str, default="raw", choices=["raw", "normalized"], help="Feature mode used at training time (legacy checkpoints only)")
     parser.add_argument("--batch_size", type=int, default=64, help="Inference batch size")
     
     # Mode selection
     parser.add_argument("--build", action="store_true", help="Build the FAISS database from the dataset")
     parser.add_argument("--query", type=str, default=None, help="Filename (without extension) to search for")
     parser.add_argument("--top_k", type=int, default=5, help="Number of similar models to retrieve")
-    
-    args = parser.parse_args()
+    return parser
+
+
+def main(argv=None, parser=None, dataset_cls=CADGraphDataset):
+    parser = parser or build_arg_parser()
+    args = parser.parse_args(argv)
 
     if args.build:
-        build_database(args)
+        build_database(args, dataset_cls=dataset_cls)
     elif args.query:
         query_database(args)
     else:
         logging.warning("Please specify an action: --build OR --query <model_name>")
+
+
+if __name__ == "__main__":
+    main()

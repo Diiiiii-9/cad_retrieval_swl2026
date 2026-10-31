@@ -30,7 +30,7 @@ Run the following in the login node terminal:
 
 ```bash
 cd ~
-wget [https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh)
+wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
 bash Miniforge3-Linux-x86_64.sh -b -p ~/miniforge3
 source ~/miniforge3/bin/activate
 conda init bash
@@ -58,7 +58,7 @@ To prevent channel conflicts between Conda and Pip (which causes missing `libmkl
 conda install -c conda-forge pythonocc-core -y
 
 # Step B: Install PyTorch with CUDA 12.4 via pip (Bundles all .so libraries)
-pip install torch torchvision torchaudio --index-url [https://download.pytorch.org/whl/cu124](https://download.pytorch.org/whl/cu124)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
 # Step C: Install ML, Graph, and UI dependencies
 pip install torch_geometric tqdm faiss-cpu streamlit plotly trimesh pandas scikit-learn matplotlib seaborn
@@ -73,7 +73,7 @@ pip install torch_geometric tqdm faiss-cpu streamlit plotly trimesh pandas sciki
 
 ```bash
 cd ~
-git clone [https://github.com/Diiiiii-9/cad_retrieval_swl2026.git](https://github.com/Diiiiii-9/cad_retrieval_swl2026.git)
+git clone https://github.com/Diiiiii-9/cad_retrieval_swl2026.git
 cd cad_retrieval_swl2026
 mkdir -p data/raw_step/mfcad
 
@@ -102,7 +102,7 @@ salloc -p lrz-cpu -N 1 --time=00:30:00
 
 # Once granted, activate environment and run processing
 cd ~/cad_retrieval_swl2026
-source ~/.conda_init
+source ~/miniforge3/bin/activate
 conda activate cad_retrieval
 python -m src.data_converter --input ./data/raw_step/mfcad --output ./data/processed_graphs/mfcad
 
@@ -149,3 +149,23 @@ squeue -u <your_lrz_username>
 tail -f train_*.out
 
 ```
+
+
+## Phase 5: Final Experiments (seed runs, Fusion 360 ablation, evaluation)
+
+Ready-made SLURM scripts live in `scripts/lrz/` and are documented in the main `README.md`
+(section "Final Experiments on the LRZ AI Systems"). In short:
+
+```bash
+cd ~/cad_retrieval_swl2026
+DRY_RUN=1 bash scripts/lrz/submit_mfcad_final.sh   # check what will be submitted
+bash scripts/lrz/submit_mfcad_final.sh             # 12 GPU jobs (4 configs x 3 seeds)
+bash scripts/lrz/submit_fusion360_ablation.sh      # 12 GPU jobs (Fusion 360 ablation)
+
+# after all jobs finished, on a CPU node (not the login node):
+salloc -p lrz-cpu -N 1 --time=01:00:00
+bash scripts/lrz/evaluate_all.sh
+```
+
+Each job trains one config and builds its FAISS index; re-submitting skips runs whose
+`final_encoder_weights.pth` already exists, so a failed job can simply be resubmitted.
