@@ -70,3 +70,4 @@ checkpoints/sweep_fusion360/**/*.bin
 checkpoints/sweep_fusion360/**/*.pkl
 checkpoints/fusion360_from_mfcad/
 .pytest_cache/
+checkpoints/**/previous_model_*/

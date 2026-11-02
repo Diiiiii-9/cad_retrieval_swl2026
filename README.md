@@ -201,19 +201,46 @@ Differences below ~1 percentage point are within what a different random seed ca
 
 ## 📊 Results
 
-Evaluation of the committed checkpoints (`results/mfcad_ablation_30ep.md`, `results/fusion360_existing.md`). P@k = share of the top-k retrieved parts that are relevant; random = random embeddings (mean of 5 draws).
+All numbers are produced by `scripts/evaluate_retrieval.py`; full tables are in `results/*.md`, charts in `results/*.png`. **P@1** = how often the single closest retrieved part is relevant. Learned configs were trained for 30 epochs with 3 seeds each and are shown as mean ± std; **random** = random embeddings, **hand-crafted** = non-learned descriptor (surface/curve-type histograms + size statistics).
 
-| Dataset / ground truth | Queries | Best GNN config P@1 | Default GNN P@1 | Random P@1 |
-|---|---|---|---|---|
-| MFCAD, file-name class (15 classes) | 15,488 | 39.9% (max pooling) | 38.0% | 15.5% |
-| MFCAD, file-name sub-class (~120) | 15,488 | 17.2% (max_mean pooling) | 16.8% | 2.2% |
-| Fusion 360, manual category (~20) | 220 | – | 36.4% | 5.3% |
+### MFCAD (15,488 queries, `results/mfcad_final.md`)
 
-The learned embeddings retrieve a part of the same class 2.5–8× more often than chance.
+| Model | P@1 same class | P@1 same sub-class | P@1 same machining features |
+|---|---|---|---|
+| GNN, raw features, mean pooling, 64-D | **38.3 ± 0.3** | **16.7 ± 0.2** | 12.8 ± 0.5 |
+| GNN, normalized features, max+mean pooling, 256-D | 37.0 ± 0.5 | 15.0 ± 0.3 | **13.4 ± 0.2** |
+| GNN, normalized features, max pooling, 256-D | 36.7 ± 0.3 | 14.5 ± 0.1 | 12.4 ± 0.3 |
+| GNN, normalized features, mean pooling, 64-D | 33.7 ± 0.6 | 13.0 ± 0.3 | 11.8 ± 0.2 |
+| Hand-crafted baseline | 27.7 | 8.1 | 2.8 |
+| Random baseline | 15.5 | 2.2 | 0.2 |
 
-**Open issue (Fusion 360):** 85% of the 15,436 Fusion 360 parts have a near-identical twin in the current embedding space (cosine > 0.9999; only ~8.5k distinct vectors), versus 0.1% on MFCAD. `scripts/check_duplicates.py` tells whether these are real duplicate bodies (common in assemblies) or different parts collapsing onto one vector. The hand-crafted baseline needs the processed graphs, so it is computed on the cluster (`scripts/lrz/evaluate_all.sh`).
+- The learned embedding clearly beats both baselines on every ground truth (e.g. 4.5× the hand-crafted baseline on machining-feature similarity).
+- Scale-invariant (normalized) features do **not** help on MFCAD: every MFCAD part is machined from the same stock block, so absolute face areas carry real information about feature size. Larger embeddings and max/max+mean pooling recover most of the gap.
+- Seed-to-seed spread is 0.2–0.6 points, so differences below ~1 point in the original single-run ablation (`results/mfcad_ablation_30ep.md`) should not be interpreted.
 
-![MFCAD P@1 by config](results/mfcad_ablation_30ep_class_L1_Pat1.png)
+### Fusion 360 (220 hand-labeled parts, ~20 categories, `results/fusion360.md`)
+
+| Model | P@1 | P@10 | MRR |
+|---|---|---|---|
+| GNN trained on Fusion 360, normalized features, max pooling | **53.9 ± 0.7** | 29.7 ± 0.9 | 0.614 |
+| GNN trained on Fusion 360, normalized features, 2 layers | 53.5 ± 1.4 | 28.7 ± 0.7 | **0.622** |
+| GNN trained on Fusion 360, normalized features (default config) | 52.4 ± 2.0 | 29.2 ± 0.6 | 0.616 |
+| GNN trained on Fusion 360, edge-dropout augmentation only | 51.8 ± 1.8 | **31.4 ± 0.7** | 0.617 |
+| GNN trained on MFCAD, applied to Fusion 360 (transfer) | 36.4 | 16.6 | 0.469 |
+| Hand-crafted baseline | 49.1 | 30.1 | 0.580 |
+| Random baseline | 5.3 | 5.9 | 0.145 |
+
+- Training on the target dataset matters: the MFCAD encoder transfers poorly (36.4 vs 52–54).
+- On Fusion 360 the hand-crafted baseline is strong (its categories such as ring, disc, shaft or plate are largely defined by surface-type composition); the GNN is ahead on P@1 and MRR but only level on P@10. With 220 labeled queries, differences of ~2 points are within noise.
+- Ablation (one variable at a time, 3 seeds): embedding size, temperature and pooling all land within ±2 points of the default. Feature noise without edge dropout is clearly worse (43.5 ± 0.5), and 5 layers are slightly worse (48.9 ± 1.8). Edge dropout is the augmentation that matters, as on MFCAD.
+
+### Data observations
+
+- One Fusion 360 part (`341e775c-0589-11ec-882f-06f9a8846f7f`) has non-finite geometry; it made every training run diverge until non-finite values were sanitized (`src/dataset.py`, `scripts/check_graphs.py`).
+- 724 Fusion 360 parts (4.7%) have a single face and therefore no graph edges (e.g. spheres); they are embedded from their face features alone.
+- Fusion 360 contains many repeated bodies: with the default model, 66% of parts have a near-identical twin (cosine > 0.9999). In a sample of 2,000 such pairs, 70% are identical input graphs (the same part reused across assemblies); most of the rest are single-face parts that differ only in size, which scale-invariant features map to the same vector by design (`results/fusion360_duplicates_*.txt`).
+
+![MFCAD P@1 by config](results/mfcad_final_class_L1_Pat1.png)
 
 
 ## 🖥️ Final Experiments on the LRZ AI Systems
@@ -230,7 +257,14 @@ salloc -p lrz-cpu -N 1 --time=01:00:00
 bash scripts/lrz/evaluate_all.sh               # writes results/*.md|csv|json (incl. cross-dataset transfer)
 ```
 
-Prefix any submit script with `DRY_RUN=1` to only print the jobs, or set `EPOCHS=` / `SEEDS=` to change them.
+Prefix any submit script with `DRY_RUN=1` to only print the jobs, or set `EPOCHS=` / `SEEDS=` to change them. Runs that are already trained and indexed are skipped, so a submit script can safely be re-run.
+
+To serve a different trained run in the web app:
+
+```bash
+bash scripts/lrz/deploy_model.sh mfcad     checkpoints/final_mfcad/raw_mean_dim64_s0
+bash scripts/lrz/deploy_model.sh fusion360 checkpoints/sweep_fusion360/layers2_s2
+```
 
 
 ## 👥 Team

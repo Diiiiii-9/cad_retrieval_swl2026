@@ -26,6 +26,7 @@ BASE="--features normalized --out_dim 64 --temp 0.1 --pooling mean --aug_mode bo
 # name | flags that override BASE (later flags win in argparse)
 CONFIGS=(
   "baseline|"
+  "raw_features|--features raw"   # same as baseline but with the original (unnormalized) features
   "dim32|--out_dim 32"   "dim128|--out_dim 128"   "dim256|--out_dim 256"
   "temp005|--temp 0.05"  "temp05|--temp 0.5"
   "pooling_max|--pooling max"   "pooling_max_mean|--pooling max_mean"
@@ -37,6 +38,7 @@ for entry in "${CONFIGS[@]}"; do
   name="${entry%%|*}"; flags="${entry#*|}"
   for seed in $SEEDS; do
     run="$OUT/${name}_s${seed}"
+    if [ -f "$run/faiss_index_fusion360.bin" ]; then echo "skip $run (already trained and indexed)"; continue; fi
     args="$BASE $flags --epochs $EPOCHS --seed $seed"
     echo "submit $run :: $args"
     if [ -z "${DRY_RUN:-}" ]; then

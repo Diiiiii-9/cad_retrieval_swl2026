@@ -29,6 +29,7 @@ for entry in "${CONFIGS[@]}"; do
   name="${entry%%|*}"; flags="${entry#*|}"
   for seed in $SEEDS; do
     run="$OUT/${name}_s${seed}"
+    if [ -f "$run/faiss_index.bin" ]; then echo "skip $run (already trained and indexed)"; continue; fi
     args="$flags --epochs $EPOCHS --seed $seed"
     echo "submit $run :: $args"
     if [ -z "${DRY_RUN:-}" ]; then
