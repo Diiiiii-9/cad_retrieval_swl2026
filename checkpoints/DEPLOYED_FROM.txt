@@ -1,0 +1,1 @@
+checkpoints/final_mfcad/raw_mean_dim64_s0
