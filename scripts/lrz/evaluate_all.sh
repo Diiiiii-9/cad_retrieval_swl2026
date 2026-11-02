@@ -39,7 +39,7 @@ python scripts/evaluate_retrieval.py --dataset fusion360 \
 
 # 5. Are the many identical Fusion 360 embeddings real duplicate parts or a collapse?
 python scripts/check_duplicates.py --run_dir checkpoints/fusion360 --graphs_dir $F360_GRAPHS \
-    | tee results/fusion360_duplicates_raw_features.txt
+    | tee results/fusion360_duplicates_deployed_model.txt
 for run in checkpoints/sweep_fusion360/baseline_s0; do
   [ -d "$run" ] && python scripts/check_duplicates.py --run_dir "$run" --graphs_dir $F360_GRAPHS \
     | tee results/fusion360_duplicates_normalized_features.txt

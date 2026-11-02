@@ -215,7 +215,7 @@ All numbers are produced by `scripts/evaluate_retrieval.py`; full tables are in 
 | Random baseline | 15.5 | 2.2 | 0.2 |
 
 - The learned embedding clearly beats both baselines on every ground truth (e.g. 4.5× the hand-crafted baseline on machining-feature similarity).
-- Scale-invariant (normalized) features do **not** help on MFCAD: every MFCAD part is machined from the same stock block, so absolute face areas carry real information about feature size. Larger embeddings and max/max+mean pooling recover most of the gap.
+- Scale-invariant (normalized) features do **not** help on MFCAD (but they do on Fusion 360, see below): every MFCAD part is machined from the same stock block, so absolute face areas carry real information about feature size. Larger embeddings and max/max+mean pooling recover most of the gap.
 - Seed-to-seed spread is 0.2–0.6 points, so differences below ~1 point in the original single-run ablation (`results/mfcad_ablation_30ep.md`) should not be interpreted.
 
 ### Fusion 360 (220 hand-labeled parts, ~20 categories, `results/fusion360.md`)
@@ -226,11 +226,13 @@ All numbers are produced by `scripts/evaluate_retrieval.py`; full tables are in 
 | GNN trained on Fusion 360, normalized features, 2 layers | 53.5 ± 1.4 | 28.7 ± 0.7 | **0.622** |
 | GNN trained on Fusion 360, normalized features (default config) | 52.4 ± 2.0 | 29.2 ± 0.6 | 0.616 |
 | GNN trained on Fusion 360, edge-dropout augmentation only | 51.8 ± 1.8 | **31.4 ± 0.7** | 0.617 |
+| GNN trained on Fusion 360, **raw** features (default config) | 43.6 ± 2.1 | 22.0 ± 0.6 | 0.534 |
 | GNN trained on MFCAD, applied to Fusion 360 (transfer) | 36.4 | 16.6 | 0.469 |
 | Hand-crafted baseline | 49.1 | 30.1 | 0.580 |
 | Random baseline | 5.3 | 5.9 | 0.145 |
 
 - Training on the target dataset matters: the MFCAD encoder transfers poorly (36.4 vs 52–54).
+- Scale-invariant features are essential here: +8.8 points over raw features (52.4 vs 43.6), the opposite of MFCAD. Fusion 360 parts come in arbitrary sizes and units, so absolute areas mostly add noise, whereas on MFCAD (one shared stock size) they carry information.
 - On Fusion 360 the hand-crafted baseline is strong (its categories such as ring, disc, shaft or plate are largely defined by surface-type composition); the GNN is ahead on P@1 and MRR but only level on P@10. With 220 labeled queries, differences of ~2 points are within noise.
 - Ablation (one variable at a time, 3 seeds): embedding size, temperature and pooling all land within ±2 points of the default. Feature noise without edge dropout is clearly worse (43.5 ± 0.5), and 5 layers are slightly worse (48.9 ± 1.8). Edge dropout is the augmentation that matters, as on MFCAD.
 
@@ -240,7 +242,15 @@ All numbers are produced by `scripts/evaluate_retrieval.py`; full tables are in 
 - 724 Fusion 360 parts (4.7%) have a single face and therefore no graph edges (e.g. spheres); they are embedded from their face features alone.
 - Fusion 360 contains many repeated bodies: with the default model, 66% of parts have a near-identical twin (cosine > 0.9999). In a sample of 2,000 such pairs, 70% are identical input graphs (the same part reused across assemblies); most of the rest are single-face parts that differ only in size, which scale-invariant features map to the same vector by design (`results/fusion360_duplicates_*.txt`).
 
+### Models served by the web app
+
+| Page | Run | Result |
+|---|---|---|
+| MFCAD | `checkpoints/final_mfcad/raw_mean_dim64_s0` | P@1 38.0 (class), 13.3 (machining features) |
+| Fusion 360 | `checkpoints/sweep_fusion360/layers2_s2` | P@1 55.0, MRR 0.629 |
+
 ![MFCAD P@1 by config](results/mfcad_final_class_L1_Pat1.png)
+![Fusion 360 P@1 by config](results/fusion360_category_Pat1.png)
 
 
 ## 🖥️ Final Experiments on the LRZ AI Systems
