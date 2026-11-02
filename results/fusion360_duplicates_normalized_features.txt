@@ -1,1 +1,11 @@
-0/15436 parts (0.0%) have a twin with cosine > 0.9999
+10157/15436 parts (65.8%) have a twin with cosine > 0.9999
+Checked 2000 pairs (0 skipped, graph missing):
+  identical input graphs (real duplicates): 1405 (70.2%)
+  DIFFERENT input graphs (embedding collapse): 595 (29.8%)
+    e.g. 2097d412-0601-11ec-a85f-0ad1b0555297 (1 faces, area 1.8e+04)  vs  91f4480a-05cf-11ec-9961-0a2ba9429539 (1 faces, area 174)
+    e.g. 1781e1d2-0565-11ec-8eed-0a2b8709b52f (1 faces, area 28.3)  vs  6d66c000-059d-11ec-b1ea-023259ce419f (1 faces, area 7.07e+04)
+    e.g. cfcc7424-058d-11ec-91eb-067e2be2e287 (23 faces, area 1.13e+05)  vs  d02da6cc-058d-11ec-b2ad-067e2be2e287 (23 faces, area 1.2e+05)
+    e.g. 0022d012-05d2-11ec-b44e-02c1fc826105 (1 faces, area 3.55e+04)  vs  b7daab80-054b-11ec-8d8d-0ac51587b959 (1 faces, area 4.04e+05)
+    e.g. 245a189c-0596-11ec-92cf-0aa144729c8d (1 faces, area 1.85e+03)  vs  77448786-055b-11ec-af4d-06368d9f66a5 (1 faces, area 1.55e+04)
+
+-> Mostly real duplicates: mention it in the report; consider deduplicating the gallery.

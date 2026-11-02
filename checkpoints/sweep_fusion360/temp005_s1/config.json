@@ -1,0 +1,21 @@
+{
+  "aug_mode": "both",
+  "batch_size": 32,
+  "data_dir": "./data/processed_graphs/fusion360",
+  "dataset_class": "Fusion360GraphDataset",
+  "dropout": 0.2,
+  "edge_in_dim": 11,
+  "epochs": 30,
+  "features": "normalized",
+  "hidden_dim": 128,
+  "lr": 0.001,
+  "node_in_dim": 14,
+  "num_graphs": 15436,
+  "num_layers": 3,
+  "num_workers": 4,
+  "out_dim": 64,
+  "pooling": "mean",
+  "save_dir": "checkpoints/sweep_fusion360/temp005_s1",
+  "seed": 1,
+  "temp": 0.05
+}
