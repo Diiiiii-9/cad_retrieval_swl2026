@@ -1,0 +1,21 @@
+{
+  "aug_mode": "both",
+  "batch_size": 32,
+  "data_dir": "./data/processed_graphs/mfcad",
+  "dataset_class": "CADGraphDataset",
+  "dropout": 0.2,
+  "edge_in_dim": 3,
+  "epochs": 30,
+  "features": "raw",
+  "hidden_dim": 128,
+  "lr": 0.001,
+  "node_in_dim": 4,
+  "num_graphs": 15488,
+  "num_layers": 3,
+  "num_workers": 4,
+  "out_dim": 64,
+  "pooling": "mean",
+  "save_dir": "checkpoints/final_mfcad/raw_mean_dim64_s0",
+  "seed": 0,
+  "temp": 0.1
+}

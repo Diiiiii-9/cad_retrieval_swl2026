@@ -1,0 +1,1 @@
+0/15436 parts (0.0%) have a twin with cosine > 0.9999
