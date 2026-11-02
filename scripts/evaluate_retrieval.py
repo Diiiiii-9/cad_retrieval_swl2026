@@ -362,6 +362,14 @@ def main(argv=None):
             print(f"[SKIP] {run_dir}: {len(missing)} gallery models missing from this index")
             continue
         X = vectors[[pos[n] for n in gallery]]
+        bad = ~np.isfinite(X).all(axis=1)
+        if bad.mean() > 0.01:
+            print(f"[FAIL] {run_dir}: {bad.sum()}/{len(X)} embeddings are NaN/inf -- the model is broken "
+                  "(check train_history.json). Not reported.")
+            continue
+        if bad.any():
+            print(f"[WARN] {run_dir}: {bad.sum()} NaN/inf embeddings replaced by zero vectors")
+            X = np.where(np.isfinite(X), X, 0.0).astype("float32")
         results = evaluate_vectors(X, schemes)
         add(run_dir.name, config_name(run_dir.name), results)
         main_scheme = next(iter(results))

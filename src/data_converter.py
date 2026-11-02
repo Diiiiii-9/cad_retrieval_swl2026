@@ -9,6 +9,7 @@ CAD to Graph Converter for Unsupervised Learning
 """
 
 import os
+import math
 import argparse
 import pathlib
 import logging
@@ -71,6 +72,8 @@ def extract_face_features(face):
         props = GProp_GProps()
         brepgprop.SurfaceProperties(face, props)
         area = props.Mass()
+        if not math.isfinite(area):  # degenerate / unbounded surfaces
+            area = 0.0
     except Exception:
         area = 0.0
         
@@ -92,6 +95,8 @@ def extract_edge_features(edge):
         props = GProp_GProps()
         brepgprop.LinearProperties(edge, props)
         length = props.Mass()
+        if not math.isfinite(length):  # degenerate / infinite curves
+            length = 0.0
     except Exception:
         length = 0.0
         

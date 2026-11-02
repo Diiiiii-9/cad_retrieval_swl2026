@@ -54,3 +54,26 @@ def test_legacy_checkpoint_still_loads():
         pytest.skip("no committed checkpoint")
     enc = CADGraphEncoder(4, 3, hidden_dim=LEGACY_DEFAULTS["hidden_dim"], out_dim=LEGACY_DEFAULTS["out_dim"])
     load_encoder_weights(enc, ckpt, torch.device("cpu"))
+
+
+def test_nan_graph_does_not_break_training(graph_dir, tmp_path):
+    """One graph with NaN/inf geometry (as found in Fusion 360) must not turn the model into NaN."""
+    import math
+    import torch
+    from tests.conftest import make_raw_graph
+    bad = make_raw_graph(999)
+    bad.x[0, 0] = float("nan")
+    bad.x[1, 0] = float("inf")
+    bad.edge_attr[0, 0] = float("inf")
+    torch.save(bad, graph_dir / "0-0-0-999.pt")
+
+    for features in ("raw", "normalized"):
+        run = tmp_path / f"nan_{features}"
+        train_unsupervised.train(["--data_dir", str(graph_dir), "--save_dir", str(run), "--epochs", "2",
+                                  "--batch_size", "8", "--features", features])
+        history = json.loads((run / "train_history.json").read_text())
+        assert all(math.isfinite(h["loss"]) for h in history)
+        retrieval.main(["--build", "--data_dir", str(graph_dir), "--save_dir", str(run)])
+        index = faiss.read_index(str(run / "faiss_index.bin"))
+        import numpy as np
+        assert np.isfinite(index.reconstruct_n(0, index.ntotal)).all()

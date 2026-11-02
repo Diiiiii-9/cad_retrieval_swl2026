@@ -217,6 +217,7 @@ def train(argv=None, dataset_cls=CADGraphDataset, parser=None):
     for epoch in range(1, args.epochs + 1):
         model.train()
         epoch_loss = 0.0
+        good_batches, skipped_batches = 0, 0
         
         # Progress bar for batches
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch}/{args.epochs}", leave=False)
@@ -234,19 +235,32 @@ def train(argv=None, dataset_cls=CADGraphDataset, parser=None):
             
             # Step C: Calculate Contrastive Loss
             loss = info_nce_loss(z1, z2, temperature=args.temp)
+
+            # Safety net: never apply a NaN/inf update -- one bad batch would destroy every weight
+            if not torch.isfinite(loss):
+                skipped_batches += 1
+                optimizer.zero_grad()
+                continue
             
             # Step D: Backpropagation
             loss.backward()
             optimizer.step()
             
             epoch_loss += loss.item()
+            good_batches += 1
             progress_bar.set_postfix({"batch_loss": f"{loss.item():.4f}"})
             
         # Step E: Scheduler Update & Logging
         scheduler.step()
-        avg_epoch_loss = epoch_loss / len(dataloader)
+        if good_batches == 0:
+            raise RuntimeError(f"Epoch {epoch}: every batch had a non-finite loss -- check the input graphs "
+                               "(python scripts/check_graphs.py <data_dir>).")
+        if skipped_batches:
+            logging.warning(f"Epoch {epoch}: skipped {skipped_batches} batch(es) with non-finite loss.")
+        avg_epoch_loss = epoch_loss / good_batches
         logging.info(f"Epoch [{epoch}/{args.epochs}] - Average Loss: {avg_epoch_loss:.4f} - LR: {scheduler.get_last_lr()[0]:.6f}")
-        history.append({"epoch": epoch, "loss": avg_epoch_loss, "lr": scheduler.get_last_lr()[0],
+        history.append({"epoch": epoch, "loss": avg_epoch_loss, "skipped_batches": skipped_batches,
+                        "lr": scheduler.get_last_lr()[0],
                         "elapsed_s": round(time.time() - start_time, 1)})
         # Written every epoch so a killed job still leaves a usable loss curve for the report
         with open(save_path / "train_history.json", "w", encoding="utf-8") as f:

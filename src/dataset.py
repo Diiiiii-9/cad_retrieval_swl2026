@@ -15,6 +15,23 @@ import logging
 import torch
 from torch_geometric.data import Dataset, Data
 
+_warned_files = set()
+
+
+def sanitize_graph(data, name=""):
+    """Replaces NaN/inf in node and edge features with 0 (in place). Returns True if anything changed."""
+    changed = False
+    for key in ("x", "edge_attr"):
+        t = getattr(data, key, None)
+        if t is not None and t.numel() > 0 and not torch.isfinite(t).all():
+            setattr(data, key, torch.nan_to_num(t.float(), nan=0.0, posinf=0.0, neginf=0.0))
+            changed = True
+    if changed and name not in _warned_files:
+        _warned_files.add(name)
+        logging.warning(f"Non-finite features in {name}: replaced with 0.")
+    return changed
+
+
 class CADGraphDataset(Dataset):
     def __init__(self, root_dir, transform=None, pre_transform=None):
         """
@@ -72,6 +89,11 @@ class CADGraphDataset(Dataset):
             # -------------------------------------------------------------
             data.name = filepath.stem 
             
+            # Robustness: a few CAD files have degenerate geometry that yields NaN/inf
+            # areas or lengths. One such graph in a batch turns the loss (and then every
+            # weight) into NaN, so non-finite values are replaced by 0 here.
+            sanitize_graph(data, filepath.stem)
+
             # Robustness check: Ensure edge_index exists even if the graph has isolated nodes
             if not hasattr(data, 'edge_index') or data.edge_index is None:
                 data.edge_index = torch.empty((2, 0), dtype=torch.long)

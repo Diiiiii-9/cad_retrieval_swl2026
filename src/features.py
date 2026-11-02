@@ -42,7 +42,7 @@ _EPS = 1e-8
 
 def _relative_scale(values):
     """Returns (fraction of total, log ratio to mean) for a 1-D tensor of non-negative sizes."""
-    values = values.clamp(min=0.0)
+    values = torch.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0).clamp(min=0.0)
     if values.numel() == 0:
         return values.clone(), values.clone()
     total = values.sum()
@@ -54,6 +54,7 @@ def _relative_scale(values):
 
 
 def _one_hot(idx_col, num_classes):
+    idx_col = torch.nan_to_num(idx_col, nan=float(num_classes - 1))  # unknown -> 'Other'
     idx = idx_col.round().long().clamp(min=0, max=num_classes - 1)
     return F.one_hot(idx, num_classes=num_classes).float()
 
@@ -73,7 +74,7 @@ class NormalizeCADFeatures:
             area_frac.unsqueeze(1),
             log_rel_area.unsqueeze(1),
             _one_hot(x[:, 1], NUM_SURF_TYPES),
-            x[:, 2:4],
+            torch.nan_to_num(x[:, 2:4], nan=0.0),
         ], dim=1)
 
         ea = getattr(data, "edge_attr", None)
@@ -86,7 +87,7 @@ class NormalizeCADFeatures:
                 len_frac.unsqueeze(1),
                 log_rel_len.unsqueeze(1),
                 _one_hot(ea[:, 1], NUM_CURVE_TYPES),
-                ea[:, 2:3],
+                torch.nan_to_num(ea[:, 2:3], nan=0.0),
             ], dim=1)
         return data
 
