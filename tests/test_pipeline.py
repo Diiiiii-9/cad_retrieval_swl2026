@@ -77,3 +77,27 @@ def test_nan_graph_does_not_break_training(graph_dir, tmp_path):
         index = faiss.read_index(str(run / "faiss_index.bin"))
         import numpy as np
         assert np.isfinite(index.reconstruct_n(0, index.ntotal)).all()
+
+
+def test_mask_is_used_for_index_building(graph_dir, tmp_path):
+    """The index must be built with the SAME mask the model was trained with (read from config.json),
+    otherwise the encoder sees information at retrieval time that it never saw in training."""
+    run = tmp_path / "masked_s0"
+    train_unsupervised.train(["--data_dir", str(graph_dir), "--save_dir", str(run), "--epochs", "1",
+                              "--batch_size", "8", "--features", "normalized", "--mask", "no_type"])
+    cfg, found = load_run_config(run)
+    assert found and cfg["mask"] == "no_type"
+
+    args = retrieval.build_arg_parser().parse_args(["--build", "--save_dir", str(run)])
+    from src.run_config import resolve_arch
+    args, _ = resolve_arch(args, run)
+    assert args.mask == "no_type"
+
+    retrieval.main(["--build", "--data_dir", str(graph_dir), "--save_dir", str(run)])
+    assert (run / "faiss_index.bin").exists()
+
+
+def test_old_runs_without_mask_default_to_none(tmp_path):
+    (tmp_path / "config.json").write_text(json.dumps({"features": "raw", "out_dim": 64}))
+    cfg, found = load_run_config(tmp_path)
+    assert found and cfg["mask"] == "none"

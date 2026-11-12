@@ -21,7 +21,7 @@ import torch
 CONFIG_FILENAME = "config.json"
 
 # Architecture keys needed to rebuild the encoder
-ARCH_KEYS = ("hidden_dim", "out_dim", "num_layers", "pooling", "features")
+ARCH_KEYS = ("hidden_dim", "out_dim", "num_layers", "pooling", "features", "mask")
 
 LEGACY_DEFAULTS = {
     "hidden_dim": 128,
@@ -29,6 +29,7 @@ LEGACY_DEFAULTS = {
     "num_layers": 3,
     "pooling": "mean",
     "features": "raw",
+    "mask": "none",      # runs trained before --mask existed saw all features
 }
 
 

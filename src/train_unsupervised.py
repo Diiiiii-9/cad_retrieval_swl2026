@@ -31,7 +31,7 @@ from torch_geometric.utils import dropout_edge
 # Import custom modules
 from src.dataset import CADGraphDataset
 from src.networks import CADGraphEncoder, CADContrastiveModel
-from src.features import FEATURE_MODES, get_transform, noise_dims_for
+from src.features import FEATURE_MODES, MASK_MODES, get_transform, noise_dims_for
 from src.run_config import save_run_config
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -143,6 +143,8 @@ def build_arg_parser(default_data_dir="./data/processed_graphs/mfcad", default_s
     parser.add_argument("--dropout", type=float, default=0.2, help="Dropout inside the encoder")
     parser.add_argument("--features", type=str, default="raw", choices=list(FEATURE_MODES),
                         help="'raw' = original 4/3-dim features; 'normalized' = scale-invariant sizes + one-hot types (see src/features.py)")
+    parser.add_argument("--mask", type=str, default="none", choices=list(MASK_MODES),
+                        help="Input ablation: hide a feature group by setting it to 0 (see src/features.py)")
     parser.add_argument("--seed", type=int, default=0, help="Random seed (run 3 seeds to report mean +- std)")
     parser.add_argument("--num_workers", type=int, default=0, help="DataLoader worker processes")
     return parser
@@ -166,10 +168,10 @@ def train(argv=None, dataset_cls=CADGraphDataset, parser=None):
     # 3. Load Dataset
     logging.info("Loading dataset...")
     try:
-        dataset = dataset_cls(root_dir=args.data_dir, transform=get_transform(args.features))
+        dataset = dataset_cls(root_dir=args.data_dir, transform=get_transform(args.features, args.mask))
         node_dim, edge_dim = dataset.get_feature_dimensions()
         logging.info(f"Dataset loaded: {len(dataset)} graphs found.")
-        logging.info(f"Feature mode: {args.features} -> Node Features: {node_dim}, Edge Features: {edge_dim}")
+        logging.info(f"Feature mode: {args.features}, mask: {args.mask} -> Node Features: {node_dim}, Edge Features: {edge_dim}")
     except Exception as e:
         logging.error(f"Failed to load dataset: {e}")
         return None

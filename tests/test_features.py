@@ -41,3 +41,49 @@ def test_noise_only_on_continuous_columns():
     assert not torch.equal(aug.x[:, :NODE_CONT_DIMS], batch.x[:, :NODE_CONT_DIMS])
     assert torch.equal(aug.x[:, NODE_CONT_DIMS:], batch.x[:, NODE_CONT_DIMS:])
     assert batch.x is not aug.x  # original batch must not be modified in place
+
+
+# ==========================================
+# Feature-group masking (input ablation)
+# ==========================================
+import pytest
+from src.features import MASK_MODES, FEATURE_GROUPS
+
+
+@pytest.mark.parametrize("features", ["raw", "normalized"])
+@pytest.mark.parametrize("mask", list(MASK_MODES))
+def test_mask_zeros_exactly_its_groups(features, mask):
+    """Masked columns must be 0, every other column must be untouched, shapes must not change."""
+    raw = make_raw_graph(3)
+    full = get_transform(features)(raw) if features == "normalized" else raw
+    t = get_transform(features, mask)
+    masked = t(raw) if t is not None else raw   # raw + none = no transform at all
+
+    assert masked.x.shape == full.x.shape and masked.edge_attr.shape == full.edge_attr.shape
+    groups = FEATURE_GROUPS[features]
+    hidden_node = {c for g in MASK_MODES[mask]["node"] for c in groups[g][0]}
+    hidden_edge = {c for g in MASK_MODES[mask]["edge"] for c in groups[g][1]}
+    for c in range(full.x.shape[1]):
+        expected = torch.zeros_like(full.x[:, c]) if c in hidden_node else full.x[:, c]
+        assert torch.equal(masked.x[:, c], expected), f"node column {c}"
+    for c in range(full.edge_attr.shape[1]):
+        expected = torch.zeros_like(full.edge_attr[:, c]) if c in hidden_edge else full.edge_attr[:, c]
+        assert torch.equal(masked.edge_attr[:, c], expected), f"edge column {c}"
+
+
+@pytest.mark.parametrize("features", ["raw", "normalized"])
+def test_feature_groups_cover_every_column_once(features):
+    """Every input column belongs to exactly one group -> topology_only really hides everything."""
+    from src.features import RAW_NODE_DIM, RAW_EDGE_DIM
+    n_dim, e_dim = (RAW_NODE_DIM, RAW_EDGE_DIM) if features == "raw" else (NORM_NODE_DIM, NORM_EDGE_DIM)
+    node_cols = [c for g in FEATURE_GROUPS[features].values() for c in g[0]]
+    edge_cols = [c for g in FEATURE_GROUPS[features].values() for c in g[1]]
+    assert sorted(node_cols) == list(range(n_dim))
+    assert sorted(edge_cols) == list(range(e_dim))
+
+
+def test_mask_does_not_modify_the_original_graph():
+    raw = make_raw_graph(4)
+    before = raw.x.clone()
+    get_transform("raw", "topology_only")(raw)
+    assert torch.equal(raw.x, before)
