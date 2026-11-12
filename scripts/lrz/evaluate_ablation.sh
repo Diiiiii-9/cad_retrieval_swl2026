@@ -1,5 +1,9 @@
 #!/bin/bash
 # =====================================================================
+# Ablation Evaluation per Cell (LRZ)
+# @Author: Eduardo Dall Igna
+# @Date: 2026-11-11
+# @Description:
 # Evaluates the ablation grid: ONE results table per cell (dataset x feature mode),
 # so baselines of different cells are never averaged together.
 #
@@ -8,7 +12,7 @@
 #   DRY_RUN=1 bash scripts/lrz/evaluate_ablation.sh       # only print the commands
 #
 # CPU is enough, but not on the login node:
-#   salloc -p lrz-cpu -N 1 --time=00:30:00
+#   salloc -p lrz-cpu --qos=cpu -N 1 --time=01:00:00, then srun --pty bash
 # Output: results/ablation_<cell>.md|csv|json  (+ charts via scripts/plot_results.py)
 # =====================================================================
 set -euo pipefail

@@ -11,6 +11,9 @@ every index build, and a mismatch either crashed or silently produced garbage.)
 
 Checkpoints trained before config.json existed fall back to LEGACY_DEFAULTS,
 which match the original training script defaults.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): 'mask' added to ARCH_KEYS (older runs default to 'none').
 """
 
 import json

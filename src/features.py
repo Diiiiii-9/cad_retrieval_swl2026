@@ -23,6 +23,10 @@ NormalizeCADFeatures fixes both at load time (no STEP re-conversion needed):
 The continuous columns are always first (NODE_CONT_DIMS / EDGE_CONT_DIMS), which
 lets the contrastive augmentation add Gaussian noise ONLY to continuous features
 instead of corrupting the one-hot category columns.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): feature-group masking for the input ablation
+  (FEATURE_GROUPS, MASK_MODES, MaskFeatureGroups); get_transform() now takes a mask.
 """
 
 import torch

@@ -1,9 +1,14 @@
 #!/bin/bash
 # =====================================================================
+# Ablation Job Submission (LRZ)
+# @Author: Eduardo Dall Igna
+# @Date: 2026-11-10
+# @Description:
 # Full ablation on the updated code: one (dataset, feature mode) grid per call.
 #   DATASET=mfcad     FEATURES=raw        bash scripts/lrz/submit_ablation.sh
 #   DATASET=mfcad     FEATURES=normalized bash scripts/lrz/submit_ablation.sh
 #   DATASET=fusion360 FEATURES=raw        bash scripts/lrz/submit_ablation.sh
+#   SWEEP=masks DATASET=... FEATURES=... -> input ablation (feature groups hidden) instead of hyper-parameters
 #   DRY_RUN=1 ...                      -> only print what would be submitted
 #   OUT=checkpoints/ablation_smoke EPOCHS=1 SEEDS=0 ... -> 1-epoch smoke test of every config
 # =====================================================================

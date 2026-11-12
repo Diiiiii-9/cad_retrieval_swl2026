@@ -1,4 +1,10 @@
-"""Cross-cell overview of the ablation study.
+"""
+Cross-Cell Comparison of the Ablation Study
+===========================================
+@Author: Eduardo Dall Igna
+@Date: 2026-11-12
+@Description:
+Cross-cell overview of the ablation study.
 
 Reads the per-cell results written by scripts/lrz/evaluate_ablation.sh
 (results/ablation_<cell>.json) and prints ONE table: every config as a row,
@@ -18,6 +24,7 @@ differences "effects" that are far too small to matter in practice.
     python scripts/compare_cells.py --metric mAP@10
     python scripts/compare_cells.py --out results/ablation_overview
 """
+
 import argparse
 import json
 from pathlib import Path

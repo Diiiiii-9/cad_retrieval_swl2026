@@ -7,6 +7,9 @@ CAD Vector Retrieval System
 Builds and queries a FAISS vector database using the trained GNN Encoder.
 Uses Cosine Similarity (Inner Product on L2-normalized embeddings) to 
 find geometrically similar CAD models in milliseconds.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): index building applies the training-time mask from config.json.
 """
 
 import os

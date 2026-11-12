@@ -79,6 +79,7 @@ def test_nan_graph_does_not_break_training(graph_dir, tmp_path):
         assert np.isfinite(index.reconstruct_n(0, index.ntotal)).all()
 
 
+# Added 2026-11-11 by Eduardo Dall Igna: input-ablation (--mask) tests
 def test_mask_is_used_for_index_building(graph_dir, tmp_path):
     """The index must be built with the SAME mask the model was trained with (read from config.json),
     otherwise the encoder sees information at retrieval time that it never saw in training."""

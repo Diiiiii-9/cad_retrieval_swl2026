@@ -4,6 +4,9 @@ CAD Model Retrieval - Interactive Web Interface
 A Streamlit frontend that allows users to upload a 3D CAD model (.step)
 and instantly retrieves the top geometrically similar models from the database
 using the trained GNN Encoder and FAISS vector search.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): the app applies the training-time mask from config.json.
 """
 
 import os

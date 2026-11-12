@@ -8,6 +8,9 @@ Trains the GINE-based CAD Graph Encoder using Contrastive Learning.
 Generates geometric embeddings by maximizing the similarity between 
 augmented views of the same CAD graph while minimizing similarity 
 with other graphs in the batch.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): --mask option for the input ablation.
 """
 
 import os

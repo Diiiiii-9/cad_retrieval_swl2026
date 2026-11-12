@@ -1,3 +1,7 @@
+# ==========================================
+# Feature-group masking (input ablation)
+# Added 2026-11-11 by Eduardo Dall Igna
+# ==========================================
 import torch
 
 from src.features import (NormalizeCADFeatures, NORM_NODE_DIM, NORM_EDGE_DIM, NODE_CONT_DIMS,
