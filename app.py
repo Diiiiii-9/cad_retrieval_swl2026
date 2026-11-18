@@ -4,6 +4,9 @@ CAD Model Retrieval - Interactive Web Interface
 A Streamlit frontend that allows users to upload a 3D CAD model (.step)
 and instantly retrieves the top geometrically similar models from the database
 using the trained GNN Encoder and FAISS vector search.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): the app applies the training-time mask from config.json.
 """
 
 import os
@@ -268,7 +271,7 @@ def render_page(dataset_key):
                 st.stop()
                 
             # 2. Apply the same feature transform used at training time, then batch
-            transform = get_transform(run_config["features"])
+            transform = get_transform(run_config["features"], run_config.get("mask", "none"))
             if transform is not None:
                 graph_data = transform(graph_data)
             batch = Batch.from_data_list([graph_data]).to(device)

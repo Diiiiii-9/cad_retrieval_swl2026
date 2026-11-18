@@ -11,6 +11,9 @@ every index build, and a mismatch either crashed or silently produced garbage.)
 
 Checkpoints trained before config.json existed fall back to LEGACY_DEFAULTS,
 which match the original training script defaults.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): 'mask' added to ARCH_KEYS (older runs default to 'none').
 """
 
 import json
@@ -21,7 +24,7 @@ import torch
 CONFIG_FILENAME = "config.json"
 
 # Architecture keys needed to rebuild the encoder
-ARCH_KEYS = ("hidden_dim", "out_dim", "num_layers", "pooling", "features")
+ARCH_KEYS = ("hidden_dim", "out_dim", "num_layers", "pooling", "features", "mask")
 
 LEGACY_DEFAULTS = {
     "hidden_dim": 128,
@@ -29,6 +32,7 @@ LEGACY_DEFAULTS = {
     "num_layers": 3,
     "pooling": "mean",
     "features": "raw",
+    "mask": "none",      # runs trained before --mask existed saw all features
 }
 
 

@@ -71,3 +71,6 @@ checkpoints/sweep_fusion360/**/*.pkl
 checkpoints/fusion360_from_mfcad/
 .pytest_cache/
 checkpoints/**/previous_model_*/
+checkpoints/ablation/**/*.pth
+checkpoints/ablation/**/*.bin
+checkpoints/ablation/**/*.pkl

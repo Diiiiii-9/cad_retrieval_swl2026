@@ -23,6 +23,10 @@ NormalizeCADFeatures fixes both at load time (no STEP re-conversion needed):
 The continuous columns are always first (NODE_CONT_DIMS / EDGE_CONT_DIMS), which
 lets the contrastive augmentation add Gaussian noise ONLY to continuous features
 instead of corrupting the one-hot category columns.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): feature-group masking for the input ablation
+  (FEATURE_GROUPS, MASK_MODES, MaskFeatureGroups); get_transform() now takes a mask.
 """
 
 import torch
@@ -95,13 +99,95 @@ class NormalizeCADFeatures:
         return f"{self.__class__.__name__}()"
 
 
-def get_transform(features):
-    """Maps the --features CLI value to a dataset transform (or None for raw)."""
-    if features == "raw":
-        return None
+# ==========================================
+# Feature-group masking (input ablation)
+# ==========================================
+# Which columns hold which kind of information, for each feature mode.
+# Each entry: (node columns, edge columns), as Python slices / lists of indices.
+#   raw:        x = [area, surf_idx, closed_u, closed_v]          edge = [length, curve_idx, closed]
+#   normalized: x = [area_frac, log_rel_area, 10 x surf one-hot,  edge = [len_frac, log_rel_len, 8 x curve one-hot,
+#                    closed_u, closed_v]                                  closed]
+FEATURE_GROUPS = {
+    "raw": {
+        "size":   ([0],                [0]),
+        "type":   ([1],                [1]),
+        "closed": ([2, 3],             [2]),
+    },
+    "normalized": {
+        "size":   ([0, 1],             [0, 1]),
+        "type":   (list(range(2, 12)), list(range(2, 10))),
+        "closed": ([12, 13],           [10]),
+    },
+}
+
+# --mask value -> which groups are hidden from the model
+MASK_MODES = {
+    "none":          {"node": [],                         "edge": []},
+    "no_size":       {"node": ["size"],                   "edge": ["size"]},
+    "no_type":       {"node": ["type"],                   "edge": ["type"]},
+    "no_closed":     {"node": ["closed"],                 "edge": ["closed"]},
+    "no_edge_attr":  {"node": [],                         "edge": ["size", "type", "closed"]},
+    "topology_only": {"node": ["size", "type", "closed"], "edge": ["size", "type", "closed"]},
+}
+
+
+class MaskFeatureGroups:
+    """Sets whole feature groups to 0 so the model cannot use that information.
+    The tensor shapes stay the same, so the architecture is identical to the
+    unmasked run -- only the information the model can see changes."""
+
+    def __init__(self, features, mask):
+        if mask not in MASK_MODES:
+            raise ValueError(f"Unknown mask {mask!r}. Must be one of {list(MASK_MODES)}.")
+        groups = FEATURE_GROUPS[features]
+        self.mask = mask
+        self.node_cols = sorted({c for g in MASK_MODES[mask]["node"] for c in groups[g][0]})
+        self.edge_cols = sorted({c for g in MASK_MODES[mask]["edge"] for c in groups[g][1]})
+
+    def __call__(self, data):
+        data = data.clone()
+        if self.node_cols:
+            data.x = data.x.float().clone()
+            data.x[:, self.node_cols] = 0.0
+        ea = getattr(data, "edge_attr", None)
+        if self.edge_cols and ea is not None and ea.numel() > 0:
+            data.edge_attr = ea.float().clone()
+            data.edge_attr[:, self.edge_cols] = 0.0
+        return data
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(mask={self.mask!r})"
+
+
+class _Compose:
+    """Applies transforms one after another (normalize first, then mask)."""
+
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, data):
+        for t in self.transforms:
+            data = t(data)
+        return data
+
+    def __repr__(self):
+        return " -> ".join(repr(t) for t in self.transforms)
+
+
+def get_transform(features, mask="none"):
+    """Maps the --features / --mask CLI values to a dataset transform (or None)."""
+    if features not in FEATURE_MODES:
+        raise ValueError(f"Unknown feature mode {features!r}. Must be one of {FEATURE_MODES}.")
+    steps = []
     if features == "normalized":
-        return NormalizeCADFeatures()
-    raise ValueError(f"Unknown feature mode {features!r}. Must be one of {FEATURE_MODES}.")
+        steps.append(NormalizeCADFeatures())
+    if mask != "none":
+        steps.append(MaskFeatureGroups(features, mask))
+    elif mask not in MASK_MODES:
+        raise ValueError(f"Unknown mask {mask!r}. Must be one of {list(MASK_MODES)}.")
+    if not steps:
+        return None
+    return steps[0] if len(steps) == 1 else _Compose(steps)
 
 
 def noise_dims_for(features):

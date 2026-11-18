@@ -7,6 +7,9 @@ CAD Vector Retrieval System
 Builds and queries a FAISS vector database using the trained GNN Encoder.
 Uses Cosine Similarity (Inner Product on L2-normalized embeddings) to 
 find geometrically similar CAD models in milliseconds.
+
+@Changes:
+  2026-11-11 (Eduardo Dall Igna): index building applies the training-time mask from config.json.
 """
 
 import os
@@ -46,14 +49,14 @@ def build_database(args, dataset_cls=CADGraphDataset):
     args, found = resolve_arch(args, weights_dir)
     if found:
         logging.info(f"Using architecture from {weights_dir}/config.json: "
-                     f"out_dim={args.out_dim}, layers={args.num_layers}, pooling={args.pooling}, features={args.features}")
+                     f"out_dim={args.out_dim}, layers={args.num_layers}, pooling={args.pooling}, features={args.features}, mask={args.mask}")
     else:
         logging.warning(f"No config.json in {weights_dir}; using CLI values "
                         f"(out_dim={args.out_dim}, layers={args.num_layers}, pooling={args.pooling}, features={args.features}).")
 
     # 1. Load Dataset
     try:
-        dataset = dataset_cls(root_dir=args.data_dir, transform=get_transform(args.features))
+        dataset = dataset_cls(root_dir=args.data_dir, transform=get_transform(args.features, args.mask))
         node_dim, edge_dim = dataset.get_feature_dimensions()
         logging.info(f"Loaded {len(dataset)} graphs for the database.")
     except Exception as e:
